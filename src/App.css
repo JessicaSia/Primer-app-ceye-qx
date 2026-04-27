@@ -1,17 +1,146 @@
 body {
   font-family: Arial, sans-serif;
-  background-color: lightblue
+  background-color: #f5f5f5;
+}
+
+.notification {
+  padding: 15px 20px;
+  margin-bottom: 20px;
+  border-radius: 5px;
+  font-weight: bold;
+  animation: slideIn 0.3s ease-in-out;
+}
+
+.notification.success {
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.notification.error {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 button {
-  margin: 10px;
-  padding: 10px;
+  margin: 5px;
+  padding: 10px 15px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+button:hover {
+  background-color: #0056b3;
+}
+
+select {
+  padding: 8px;
+  margin: 5px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  background-color: white;
+  cursor: pointer;
 }
 
 ul {
   list-style: none;
+  padding: 0;
 }
 
 li {
-  margin: 10px 0;
+  margin: 15px 0;
+  padding: 15px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+}
+
+input[type="text"],
+input[type="number"] {
+  padding: 8px;
+  margin: 5px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.material-item {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.material-item span {
+  min-width: 150px;
+}
+
+.material-description {
+  font-size: 13px;
+  color: #555;
+  margin-top: 4px;
+}
+
+.material-item input[type="number"] {
+  width: 100px;
+}
+
+.edit-form {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.edit-form input {
+  flex: 1;
+  min-width: 150px;
+}
+
+.edit-form button {
+  min-width: 100px;
+}
+
+h1 {
+  color: #333;
+  text-align: center;
+}
+
+h2 {
+  color: #555;
+  border-bottom: 2px solid #007bff;
+  padding-bottom: 10px;
+}
+
+table {
+  border-collapse: collapse;
+  margin: 20px 0;
+}
+
+table th,
+table td {
+  border: 1px solid #ddd;
+  padding: 10px;
+  text-align: left;
+}
+
+table th {
+  background-color: #f5f5f5;
+  font-weight: bold;
 }
