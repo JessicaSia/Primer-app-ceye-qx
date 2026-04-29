@@ -1,32 +1,50 @@
+:root {
+  color: #1f2933;
+  background: #eef3f7;
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  font-size: 16px;
+}
+
 body {
-  font-family: Arial, sans-serif;
-  background-color: #f5f5f5;
+  margin: 0;
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, rgba(225, 238, 246, 0.9), rgba(246, 248, 250, 0.95)),
+    #eef3f7;
+}
+
+main {
+  color: #24313f;
 }
 
 .notification {
-  padding: 15px 20px;
-  margin-bottom: 20px;
-  border-radius: 5px;
-  font-weight: bold;
-  animation: slideIn 0.3s ease-in-out;
+  position: sticky;
+  top: 16px;
+  z-index: 5;
+  padding: 14px 18px;
+  margin-bottom: 22px;
+  border-radius: 8px;
+  font-weight: 700;
+  box-shadow: 0 10px 24px rgba(31, 41, 51, 0.12);
+  animation: slideIn 0.25s ease-in-out;
 }
 
 .notification.success {
-  background-color: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
+  background-color: #dff4e7;
+  color: #17623a;
+  border: 1px solid #9ed8b7;
 }
 
 .notification.error {
-  background-color: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
+  background-color: #fde2e2;
+  color: #9b1c1c;
+  border: 1px solid #f7b5b5;
 }
 
 @keyframes slideIn {
   from {
     opacity: 0;
-    transform: translateY(-20px);
+    transform: translateY(-12px);
   }
   to {
     opacity: 1;
@@ -35,28 +53,94 @@ body {
 }
 
 button {
-  margin: 5px;
-  padding: 10px 15px;
-  background-color: #007bff;
+  margin: 6px;
+  padding: 12px 18px;
+  min-height: 44px;
+  background-color: #2563eb;
   color: white;
   border: none;
-  border-radius: 5px;
+  border-radius: 7px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.1;
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.18);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
 }
 
 button:hover {
-  background-color: #0056b3;
+  background-color: #1d4ed8;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.24);
+  transform: translateY(-1px);
 }
 
-select {
-  padding: 8px;
-  margin: 5px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-  background-color: white;
-  cursor: pointer;
+button:active {
+  transform: translateY(0);
+}
+
+.success-button {
+  background-color: #1f9d55;
+  box-shadow: 0 6px 14px rgba(31, 157, 85, 0.18);
+}
+
+.success-button:hover {
+  background-color: #187a43;
+}
+
+.warning-button {
+  background-color: #f59e0b;
+  color: #1f2933;
+  box-shadow: 0 6px 14px rgba(245, 158, 11, 0.18);
+}
+
+.warning-button:hover {
+  background-color: #d97706;
+  color: white;
+}
+
+.danger-button {
+  background-color: #dc2626;
+  box-shadow: 0 6px 14px rgba(220, 38, 38, 0.16);
+}
+
+.danger-button:hover {
+  background-color: #b91c1c;
+}
+
+.info-button {
+  background-color: #0e7490;
+  box-shadow: 0 6px 14px rgba(14, 116, 144, 0.17);
+}
+
+.info-button:hover {
+  background-color: #155e75;
+}
+
+select,
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="date"] {
+  padding: 11px 12px;
+  margin: 6px;
+  min-height: 42px;
+  border: 1px solid #c9d5df;
+  border-radius: 7px;
+  font-size: 15px;
+  color: #1f2933;
+  background-color: #fff;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+select:focus,
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus,
+input[type="date"]:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
 }
 
 ul {
@@ -65,82 +149,258 @@ ul {
 }
 
 li {
-  margin: 15px 0;
-  padding: 15px;
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 5px;
-}
-
-input[type="text"],
-input[type="number"] {
-  padding: 8px;
-  margin: 5px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
+  margin: 14px 0;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #dbe3ea;
+  border-radius: 8px;
+  box-shadow: 0 7px 18px rgba(31, 41, 51, 0.06);
 }
 
 .material-item {
   display: flex;
   align-items: center;
-  gap: 15px;
+  gap: 14px;
   flex-wrap: wrap;
 }
 
 .material-item span {
   min-width: 150px;
+  font-size: 16px;
 }
 
 .material-description {
-  font-size: 13px;
-  color: #555;
-  margin-top: 4px;
+  font-size: 14px;
+  color: #607080;
+  margin-top: 5px;
 }
 
 .material-item input[type="number"] {
-  width: 100px;
+  width: 118px;
 }
 
 .edit-form {
   display: flex;
+  align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
 
 .edit-form input {
   flex: 1;
-  min-width: 150px;
+  min-width: 170px;
 }
 
 .edit-form button {
-  min-width: 100px;
+  min-width: 112px;
 }
 
 h1 {
-  color: #333;
+  color: #17212b;
   text-align: center;
+  font-size: 34px;
+  line-height: 1.15;
+  margin: 12px 0 24px;
+  letter-spacing: 0;
 }
 
 h2 {
-  color: #555;
-  border-bottom: 2px solid #007bff;
+  color: #2f3d4a;
+  font-size: 23px;
+  margin: 22px 0 14px;
+  border-bottom: 3px solid #2563eb;
   padding-bottom: 10px;
 }
 
+h3 {
+  font-size: 20px;
+}
+
 table {
-  border-collapse: collapse;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
   margin: 20px 0;
+  background: #fff;
+  border: 1px solid #dbe3ea;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 8px 20px rgba(31, 41, 51, 0.06);
 }
 
 table th,
 table td {
-  border: 1px solid #ddd;
-  padding: 10px;
+  border-bottom: 1px solid #e1e8ee;
+  padding: 12px 14px;
   text-align: left;
+  vertical-align: middle;
+  font-size: 15px;
 }
 
 table th {
-  background-color: #f5f5f5;
-  font-weight: bold;
+  background-color: #e8f0f7;
+  color: #24313f;
+  font-weight: 800;
+}
+
+table tr:last-child td {
+  border-bottom: none;
+}
+
+table tbody tr:nth-child(even) {
+  background-color: #f8fafc;
+}
+
+.section-block,
+.report-block {
+  margin-top: 30px;
+}
+
+.section-block {
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid #dbe3ea;
+  border-radius: 8px;
+}
+
+.report-block {
+  padding: 22px;
+  border: 1px solid #dbe3ea;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(31, 41, 51, 0.08);
+}
+
+.report-block.current-report {
+  border: 2px solid #0e7490;
+  background: #f0fbfd;
+}
+
+.current-report-label {
+  display: inline-block;
+  margin-bottom: 10px;
+  padding: 7px 11px;
+  border-radius: 7px;
+  background: #0e7490;
+  color: white;
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.report-meta,
+.report-required-fields {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 14px 0;
+}
+
+.report-meta span {
+  background: #eef3f7;
+  border: 1px solid #d1dce5;
+  border-radius: 7px;
+  padding: 9px 12px;
+}
+
+.reports-toolbar {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 12px;
+}
+
+.report-search-panel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #dbe3ea;
+  border-radius: 8px;
+  box-shadow: 0 7px 18px rgba(31, 41, 51, 0.06);
+}
+
+.small-input {
+  width: 90px;
+}
+
+.difference-alert {
+  color: #dc2626;
+  font-weight: 900;
+  font-size: 16px;
+}
+
+.difference-ok {
+  color: #1f9d55;
+  font-weight: 900;
+  font-size: 16px;
+}
+
+.stock-summary {
+  margin-top: 30px;
+  padding: 16px;
+  background-color: #e7f7ed;
+  border-radius: 8px;
+  border: 2px solid #1f9d55;
+}
+
+.stock-summary h3 {
+  color: #17623a;
+  margin-top: 0;
+}
+
+.stock-lock-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 30px auto;
+  padding: 22px;
+  max-width: 540px;
+  background: #fff;
+  border: 1px solid #dbe3ea;
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(31, 41, 51, 0.08);
+}
+
+@media (max-width: 760px) {
+  h1 {
+    font-size: 27px;
+  }
+
+  h2 {
+    font-size: 20px;
+  }
+
+  button {
+    width: 100%;
+    margin: 6px 0;
+  }
+
+  .material-item,
+  .edit-form,
+  .report-meta,
+  .report-required-fields,
+  .report-search-panel,
+  .stock-lock-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .material-item span,
+  .material-item input[type="number"],
+  .small-input,
+  input,
+  select {
+    width: 100%;
+  }
+
+  table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
 }
