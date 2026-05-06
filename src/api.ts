@@ -74,3 +74,9 @@ export const updateReport = (id: string, report: ReportPayload) =>
     method: 'PUT',
     body: JSON.stringify(report),
   });
+
+export const summarizeGasInventory = (materials: MaterialPayload[]) =>
+  request<{ summary: string }>('/ai/gas-summary', {
+    method: 'POST',
+    body: JSON.stringify({ materials }),
+  });

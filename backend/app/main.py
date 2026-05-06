@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, desc, func, insert, select, update
 
+from ai_api import summarize_gas_inventory
 from .database import (
     get_database_url,
     get_engine,
@@ -68,6 +69,21 @@ class ReportPayload(BaseModel):
     user_name: str = Field(min_length=1)
     shift: str = Field(min_length=1)
     differences: list[ReportDifferencePayload] = []
+
+
+class InventorySummaryMaterialPayload(BaseModel):
+    id: str | None = None
+    name: str = Field(min_length=1)
+    existing: int = 0
+    counted: int = 0
+    description: str = ""
+    room_count: int = 0
+    process_count: int = 0
+    difference: int | None = None
+
+
+class InventorySummaryPayload(BaseModel):
+    materials: list[InventorySummaryMaterialPayload]
 
 
 @app.on_event("startup")
@@ -151,6 +167,14 @@ def get_materials(material_type: MaterialType) -> list[dict]:
     with get_engine().begin() as connection:
         rows = connection.execute(select(table).order_by(table.c.created_at)).fetchall()
     return [normalize_material(row) for row in rows]
+
+
+@app.post("/api/ai/gas-summary")
+def create_gas_summary(payload: InventorySummaryPayload) -> dict:
+    try:
+        return {"summary": summarize_gas_inventory([material.model_dump() for material in payload.materials])}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.post("/api/materials/{material_type}", status_code=201)

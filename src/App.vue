@@ -9,6 +9,7 @@ import {
   getMaterialsGas,
   getMaterialsVapor,
   getReports,
+  summarizeGasInventory,
   updateReport,
   updateMaterialGas,
   updateMaterialVapor,
@@ -73,6 +74,9 @@ const reportSearchDate = ref('');
 const highlightedReportId = ref<string | null>(null);
 const stockPassword = ref('');
 const stockAuthenticated = ref(false);
+const gasSummary = ref('');
+const gasSummaryLoading = ref(false);
+const gasSummaryError = ref('');
 
 const currentType = computed<MaterialType>(() => (view.value === 'gas' ? 'gas' : 'vapor'));
 const currentMaterials = computed(() => (currentType.value === 'gas' ? materialsGas.value : materialsVapor.value));
@@ -131,6 +135,10 @@ function setView(nextView: View) {
   view.value = nextView;
   showDifferences.value = false;
   countAdditions.value = {};
+  if (nextView !== 'gas') {
+    gasSummary.value = '';
+    gasSummaryError.value = '';
+  }
   if (nextView !== 'reports') {
     showReportSearch.value = false;
     reportSearchDate.value = '';
@@ -175,6 +183,21 @@ function reportBaseCount(diff: ReportDifference) {
 
 function formatDifference(value: number) {
   return value > 0 ? `+${value}` : String(value);
+}
+
+async function generateGasSummary() {
+  gasSummaryLoading.value = true;
+  gasSummaryError.value = '';
+
+  try {
+    const response = await summarizeGasInventory(materialsGas.value);
+    gasSummary.value = response.summary;
+  } catch (error) {
+    console.error(error);
+    gasSummaryError.value = error instanceof Error ? error.message : 'Error generando resumen AI';
+  } finally {
+    gasSummaryLoading.value = false;
+  }
 }
 
 function handleDifferenceCountInput(event: Event, materialId: string) {
@@ -698,6 +721,19 @@ function unlockStockPage() {
     <section v-else>
       <h1>Contar {{ currentType === 'gas' ? 'Gas' : 'Vapor' }}</h1>
       <button @click="setView('select')">Volver</button>
+
+      <div v-if="currentType === 'gas'" class="ai-summary-panel">
+        <div class="ai-summary-header">
+          <h2>Resumen AI de Gas</h2>
+          <button class="info-button" :disabled="gasSummaryLoading" @click="generateGasSummary">
+            {{ gasSummaryLoading ? 'Generando...' : 'Generar Resumen AI' }}
+          </button>
+        </div>
+        <p v-if="gasSummaryError" class="ai-summary-error">{{ gasSummaryError }}</p>
+        <p v-else-if="gasSummary" class="ai-summary-text">{{ gasSummary }}</p>
+        <p v-else class="ai-summary-muted">Genera un resumen rapido del conteo actual de gas.</p>
+      </div>
+
       <ul>
         <li v-for="material in currentMaterials" :key="material.id">
           <div class="material-item">

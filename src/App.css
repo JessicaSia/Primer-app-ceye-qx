@@ -78,6 +78,12 @@ button:active {
   transform: translateY(0);
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  transform: none;
+}
+
 .success-button {
   background-color: #1f9d55;
   box-shadow: 0 6px 14px rgba(31, 157, 85, 0.18);
@@ -366,6 +372,47 @@ table tbody tr:nth-child(even) {
   box-shadow: 0 10px 24px rgba(31, 41, 51, 0.08);
 }
 
+.ai-summary-panel {
+  margin: 10px 0 22px;
+  padding: 18px;
+  background: #ffffff;
+  border: 1px solid #c9d5df;
+  border-left: 5px solid #0e7490;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(31, 41, 51, 0.07);
+}
+
+.ai-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ai-summary-header h2 {
+  margin: 0;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.ai-summary-text,
+.ai-summary-muted,
+.ai-summary-error {
+  margin: 14px 0 0;
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
+.ai-summary-muted {
+  color: #607080;
+}
+
+.ai-summary-error {
+  color: #9b1c1c;
+  font-weight: 700;
+}
+
 @media (max-width: 760px) {
   h1 {
     font-size: 27px;
@@ -385,6 +432,7 @@ table tbody tr:nth-child(even) {
   .report-meta,
   .report-required-fields,
   .report-search-panel,
+  .ai-summary-header,
   .stock-lock-panel {
     align-items: stretch;
     flex-direction: column;

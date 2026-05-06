@@ -18,9 +18,12 @@ services:
   backend:
     build:
       context: ./backend
+    env_file:
+      - ./backend/.env
     ports:
       - "8000:8000"
     environment:
+      PORT: 8000
       DATABASE_URL: postgresql+psycopg://ceye_user:ceye_password@db:5432/ceye_inventory
       FRONTEND_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
     volumes:
