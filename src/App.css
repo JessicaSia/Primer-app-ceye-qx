@@ -452,3 +452,108 @@ table tbody tr:nth-child(even) {
     white-space: nowrap;
   }
 }
+
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  :root,
+  body {
+    background: #fff;
+    color: #111827;
+    font-size: 12px;
+  }
+
+  body.printing-report * {
+    visibility: hidden;
+  }
+
+  body.printing-report .report-print-target,
+  body.printing-report .report-print-target * {
+    visibility: visible;
+  }
+
+  body.printing-report #app {
+    max-width: none;
+    padding: 0;
+  }
+
+  body.printing-report .report-print-target {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: #fff;
+    box-shadow: none;
+  }
+
+  .no-print,
+  body.printing-report .no-print,
+  body.printing-report .no-print * {
+    display: none !important;
+  }
+
+  h2 {
+    color: #111827;
+    border-bottom: 2px solid #111827;
+    margin: 0 0 12px;
+    padding-bottom: 8px;
+    font-size: 18px;
+  }
+
+  .report-meta {
+    gap: 8px;
+    margin: 10px 0;
+  }
+
+  .report-meta span {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    padding: 6px 8px;
+  }
+
+  table {
+    display: table;
+    margin: 12px 0;
+    border: 1px solid #94a3b8;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  table th,
+  table td {
+    padding: 7px 8px;
+    border-bottom: 1px solid #cbd5e1;
+    font-size: 11px;
+  }
+
+  table th {
+    background-color: #e5e7eb;
+    color: #111827;
+  }
+
+  .difference-alert,
+  .difference-ok {
+    color: #111827;
+    font-size: 11px;
+  }
+
+  .stock-summary {
+    margin-top: 16px;
+    padding: 10px;
+    border: 1px solid #94a3b8;
+    background: #fff;
+  }
+
+  .stock-summary h3 {
+    color: #111827;
+    font-size: 14px;
+  }
+}

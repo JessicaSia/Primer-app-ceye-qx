@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import {
   addMaterialGas,
   addMaterialVapor,
@@ -72,6 +72,7 @@ const editReportDifferences = ref<ReportDifference[]>([]);
 const showReportSearch = ref(false);
 const reportSearchDate = ref('');
 const highlightedReportId = ref<string | null>(null);
+const printingReportId = ref<string | null>(null);
 const stockPassword = ref('');
 const stockAuthenticated = ref(false);
 const gasSummary = ref('');
@@ -470,6 +471,21 @@ function clearReportSearch() {
   reportSearchDate.value = '';
 }
 
+async function printReport(reportId: string) {
+  printingReportId.value = reportId;
+  document.body.classList.add('printing-report');
+  await nextTick();
+
+  const finishPrinting = () => {
+    printingReportId.value = null;
+    document.body.classList.remove('printing-report');
+    window.removeEventListener('afterprint', finishPrinting);
+  };
+
+  window.addEventListener('afterprint', finishPrinting);
+  window.print();
+}
+
 function unlockStockPage() {
   if (stockPassword.value === 'PrimerappJESSI9') {
     stockAuthenticated.value = true;
@@ -572,15 +588,15 @@ function unlockStockPage() {
     </section>
 
     <section v-else-if="view === 'reports'">
-      <div class="reports-toolbar">
+      <div class="reports-toolbar no-print">
         <button class="info-button" @click="toggleReportSearch">
           Buscar Reporte por Fecha
         </button>
       </div>
       <h1>Reportes de Conteo</h1>
-      <button @click="setView('home')">Volver</button>
+      <button class="no-print" @click="setView('home')">Volver</button>
 
-      <div v-if="showReportSearch" class="report-search-panel">
+      <div v-if="showReportSearch" class="report-search-panel no-print">
         <input v-model="reportSearchDate" type="date" />
         <button @click="clearReportSearch">Limpiar Busqueda</button>
       </div>
@@ -591,9 +607,15 @@ function unlockStockPage() {
         <article
           v-for="report in filteredReports"
           :key="report.id"
-          :class="['report-block', { 'current-report': highlightedReportId === report.id }]"
+          :class="[
+            'report-block',
+            {
+              'current-report': highlightedReportId === report.id,
+              'report-print-target': printingReportId === report.id,
+            },
+          ]"
         >
-          <div v-if="highlightedReportId === report.id" class="current-report-label">
+          <div v-if="highlightedReportId === report.id" class="current-report-label no-print">
             Reporte guardado actualmente
           </div>
           <h2>{{ report.type === 'gas' ? 'Conteo de Gas' : 'Conteo de Vapor' }} - {{ report.timestamp }}</h2>
@@ -670,24 +692,31 @@ function unlockStockPage() {
           </table>
           <button
             v-if="editingReportId !== report.id"
-            class="info-button"
+            class="info-button no-print"
             @click="startReportEdit(report)"
           >
             Editar Reporte
           </button>
           <button
+            v-if="editingReportId !== report.id"
+            class="warning-button no-print"
+            @click="printReport(report.id)"
+          >
+            Imprimir Reporte
+          </button>
+          <button
             v-if="editingReportId === report.id"
-            class="success-button"
+            class="success-button no-print"
             @click="saveReportEdit(report)"
           >
             Guardar Cambios del Reporte
           </button>
-          <button v-if="editingReportId === report.id" @click="cancelReportEdit">
+          <button v-if="editingReportId === report.id" class="no-print" @click="cancelReportEdit">
             Cancelar
           </button>
           <button
             v-if="editingReportId !== report.id"
-            class="success-button"
+            class="success-button no-print"
             @click="saveStockUpdate(report)"
           >
             Guardar Actualizacion de Stock
