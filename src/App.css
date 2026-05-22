@@ -543,6 +543,22 @@ table tbody tr:nth-child(even) {
     color: #111827;
   }
 
+  body.printing-report .report-differences-table th:nth-child(n + 2):nth-child(-n + 6),
+  body.printing-report .report-differences-table td:nth-child(n + 2):nth-child(-n + 6) {
+    display: none !important;
+  }
+
+  body.printing-report .report-differences-table th:first-child,
+  body.printing-report .report-differences-table td:first-child {
+    width: 75%;
+  }
+
+  body.printing-report .report-differences-table th:last-child,
+  body.printing-report .report-differences-table td:last-child {
+    width: 25%;
+    text-align: center;
+  }
+
   .difference-alert,
   .difference-ok {
     color: #111827;

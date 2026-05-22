@@ -627,7 +627,7 @@ function unlockStockPage() {
             <span><strong>Usuario:</strong> {{ report.user_name || 'Sin usuario' }}</span>
             <span><strong>Turno:</strong> {{ report.shift || 'Sin turno' }}</span>
           </div>
-          <table>
+          <table class="report-differences-table">
             <thead>
               <tr>
                 <th>Material</th>
