@@ -455,14 +455,15 @@ table tbody tr:nth-child(even) {
 
 @media print {
   @page {
-    margin: 14mm;
+    size: letter landscape;
+    margin: 6mm;
   }
 
   :root,
   body {
     background: #fff;
     color: #111827;
-    font-size: 12px;
+    font-size: 9px;
   }
 
   body.printing-report * {
@@ -505,25 +506,25 @@ table tbody tr:nth-child(even) {
   h2 {
     color: #111827;
     border-bottom: 2px solid #111827;
-    margin: 0 0 12px;
-    padding-bottom: 8px;
-    font-size: 18px;
+    margin: 0 0 6px;
+    padding-bottom: 5px;
+    font-size: 14px;
   }
 
   .report-meta {
-    gap: 8px;
-    margin: 10px 0;
+    gap: 5px;
+    margin: 5px 0 7px;
   }
 
   .report-meta span {
     border: 1px solid #cbd5e1;
     background: #fff;
-    padding: 6px 8px;
+    padding: 3px 5px;
   }
 
-  table {
-    display: table;
-    margin: 12px 0;
+  body.printing-report .report-differences-table {
+    display: block;
+    margin: 6px 0 0;
     border: 1px solid #94a3b8;
     border-radius: 0;
     box-shadow: none;
@@ -531,11 +532,31 @@ table tbody tr:nth-child(even) {
     white-space: normal;
   }
 
+  body.printing-report .report-differences-table thead {
+    display: none;
+  }
+
+  body.printing-report .report-differences-table tbody {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+  }
+
+  body.printing-report .report-differences-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 32px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border-right: 1px solid #cbd5e1;
+    border-bottom: 1px solid #cbd5e1;
+  }
+
   table th,
   table td {
-    padding: 7px 8px;
+    padding: 2px 4px;
     border-bottom: 1px solid #cbd5e1;
-    font-size: 11px;
+    font-size: 8px;
+    line-height: 1.15;
   }
 
   table th {
@@ -550,30 +571,24 @@ table tbody tr:nth-child(even) {
 
   body.printing-report .report-differences-table th:first-child,
   body.printing-report .report-differences-table td:first-child {
-    width: 75%;
+    width: auto;
+    overflow-wrap: anywhere;
   }
 
   body.printing-report .report-differences-table th:last-child,
   body.printing-report .report-differences-table td:last-child {
-    width: 25%;
+    width: auto;
     text-align: center;
+    font-weight: 800;
   }
 
   .difference-alert,
   .difference-ok {
     color: #111827;
-    font-size: 11px;
+    font-size: 8px;
   }
 
-  .stock-summary {
-    margin-top: 16px;
-    padding: 10px;
-    border: 1px solid #94a3b8;
-    background: #fff;
-  }
-
-  .stock-summary h3 {
-    color: #111827;
-    font-size: 14px;
+  body.printing-report .stock-summary {
+    display: none !important;
   }
 }
