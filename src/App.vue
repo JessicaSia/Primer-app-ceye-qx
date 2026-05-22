@@ -79,6 +79,7 @@ const stockAuthenticated = ref(false);
 const gasSummary = ref('');
 const gasSummaryLoading = ref(false);
 const gasSummaryError = ref('');
+const reportTimeZone = 'America/Mexico_City';
 
 const currentType = computed<MaterialType>(() => (view.value === 'gas' ? 'gas' : 'vapor'));
 const currentMaterials = computed(() => (currentType.value === 'gas' ? materialsGas.value : materialsVapor.value));
@@ -103,7 +104,7 @@ const adjustedDifferences = computed(() =>
 );
 const filteredReports = computed(() => {
   if (!reportSearchDate.value) return reports.value;
-  return reports.value.filter((report) => report.timestamp.slice(0, 10) === reportSearchDate.value);
+  return reports.value.filter((report) => getReportDateKey(report.timestamp) === reportSearchDate.value);
 });
 const selectedReport = computed(() =>
   filteredReports.value.find((report) => report.id === selectedReportId.value) || null
@@ -189,6 +190,44 @@ function reportBaseCount(diff: ReportDifference) {
 
 function formatDifference(value: number) {
   return value > 0 ? `+${value}` : String(value);
+}
+
+function getReportDate(timestamp: string) {
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatReportTimestamp(timestamp: string) {
+  const date = getReportDate(timestamp);
+  if (!date) return timestamp;
+
+  return new Intl.DateTimeFormat('es-MX', {
+    timeZone: reportTimeZone,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
+}
+
+function getReportDateKey(timestamp: string) {
+  const date = getReportDate(timestamp);
+  if (!date) return timestamp.slice(0, 10);
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: reportTimeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+
+  return year && month && day ? `${year}-${month}-${day}` : timestamp.slice(0, 10);
 }
 
 async function generateGasSummary() {
@@ -629,7 +668,7 @@ function unlockStockPage() {
           </div>
           <h2>{{ report.type === 'gas' ? 'Conteo de Gas' : 'Conteo de Vapor' }}</h2>
           <div class="report-card-meta">
-            <span><strong>Fecha:</strong> {{ report.timestamp }}</span>
+            <span><strong>Fecha:</strong> {{ formatReportTimestamp(report.timestamp) }}</span>
             <span><strong>Usuario:</strong> {{ report.user_name || 'Sin usuario' }}</span>
             <span><strong>Turno:</strong> {{ report.shift || 'Sin turno' }}</span>
             <span>
@@ -657,7 +696,10 @@ function unlockStockPage() {
           <div v-if="highlightedReportId === selectedReport.id" class="current-report-label no-print">
             Reporte guardado actualmente
           </div>
-          <h2>{{ selectedReport.type === 'gas' ? 'Conteo de Gas' : 'Conteo de Vapor' }} - {{ selectedReport.timestamp }}</h2>
+          <h2>
+            {{ selectedReport.type === 'gas' ? 'Conteo de Gas' : 'Conteo de Vapor' }}
+            - {{ formatReportTimestamp(selectedReport.timestamp) }}
+          </h2>
           <div v-if="editingReportId === selectedReport.id" class="report-meta edit-form">
             <input v-model="editReportUserName" type="text" placeholder="Nombre de usuario" />
             <input v-model="editReportShift" type="text" placeholder="Turno" />
