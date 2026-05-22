@@ -498,6 +498,10 @@ table tbody tr:nth-child(even) {
     display: none !important;
   }
 
+  body.printing-report .print-hide-no-difference {
+    display: none !important;
+  }
+
   h2 {
     color: #111827;
     border-bottom: 2px solid #111827;

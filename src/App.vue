@@ -640,7 +640,11 @@ function unlockStockPage() {
               </tr>
             </thead>
             <tbody v-if="editingReportId === report.id">
-              <tr v-for="diff in editReportDifferences" :key="diff.id">
+              <tr
+                v-for="diff in editReportDifferences"
+                :key="diff.id"
+                :class="{ 'print-hide-no-difference': diff.difference === 0 }"
+              >
                 <td>{{ diff.name }}</td>
                 <td>{{ diff.existing }}</td>
                 <td>
@@ -677,7 +681,11 @@ function unlockStockPage() {
               </tr>
             </tbody>
             <tbody v-else>
-              <tr v-for="diff in report.differences" :key="diff.id">
+              <tr
+                v-for="diff in report.differences"
+                :key="diff.id"
+                :class="{ 'print-hide-no-difference': diff.difference === 0 }"
+              >
                 <td>{{ diff.name }}</td>
                 <td>{{ diff.existing }}</td>
                 <td>{{ reportBaseCount(diff) }}</td>
@@ -734,7 +742,11 @@ function unlockStockPage() {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="diff in report.differences" :key="diff.id">
+                <tr
+                  v-for="diff in report.differences"
+                  :key="diff.id"
+                  :class="{ 'print-hide-no-difference': diff.difference === 0 }"
+                >
                   <td><strong>{{ diff.name }}</strong></td>
                   <td>{{ diff.existing }}</td>
                   <td>{{ diff.counted }}</td>
