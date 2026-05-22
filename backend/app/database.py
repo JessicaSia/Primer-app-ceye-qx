@@ -31,6 +31,7 @@ materials_gas = Table(
     Column("existing", Integer, nullable=False, server_default="0"),
     Column("counted", Integer, nullable=False, server_default="0"),
     Column("description", String, nullable=False, server_default=""),
+    Column("order_index", Integer, nullable=False, server_default="0"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
@@ -43,6 +44,7 @@ materials_vapor = Table(
     Column("existing", Integer, nullable=False, server_default="0"),
     Column("counted", Integer, nullable=False, server_default="0"),
     Column("description", String, nullable=False, server_default=""),
+    Column("order_index", Integer, nullable=False, server_default="0"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
@@ -124,6 +126,27 @@ def migrate_existing_tables() -> None:
                     text("ALTER TABLE reports ADD COLUMN shift VARCHAR NOT NULL DEFAULT ''")
                 )
 
+        for table_name in ("materials_gas", "materials_vapor"):
+            if table_name in inspector.get_table_names():
+                material_columns = {
+                    column["name"] for column in inspector.get_columns(table_name)
+                }
+                if "order_index" not in material_columns:
+                    connection.execute(
+                        text(
+                            f"ALTER TABLE {table_name} "
+                            "ADD COLUMN order_index INTEGER NOT NULL DEFAULT 0"
+                        )
+                    )
+                    rows = connection.execute(
+                        text(f"SELECT id FROM {table_name} ORDER BY created_at")
+                    ).fetchall()
+                    for index, row in enumerate(rows):
+                        connection.execute(
+                            text(f"UPDATE {table_name} SET order_index = :order_index WHERE id = :id"),
+                            {"order_index": index, "id": row._mapping["id"]},
+                        )
+
         if "report_differences" in inspector.get_table_names():
             difference_columns = {
                 column["name"] for column in inspector.get_columns("report_differences")
@@ -160,12 +183,14 @@ def seed_data() -> None:
                     "name": "Oxigeno",
                     "existing": 100,
                     "description": "Gas medico para respiracion asistida",
+                    "order_index": 0,
                 },
                 {
                     "id": "gas-2",
                     "name": "Nitrogeno",
                     "existing": 50,
                     "description": "Gas para sistemas de enfriamiento",
+                    "order_index": 1,
                 },
             ],
         )
@@ -177,12 +202,14 @@ def seed_data() -> None:
                     "name": "Vapor 1",
                     "existing": 20,
                     "description": "Vapor utilizado en esterilizacion",
+                    "order_index": 0,
                 },
                 {
                     "id": "vapor-2",
                     "name": "Vapor 2",
                     "existing": 30,
                     "description": "Vapor para limpieza de equipo",
+                    "order_index": 1,
                 },
             ],
         )

@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref } from 'vue';
 import {
   addMaterialGas,
   addMaterialVapor,
+  changeMaterialType,
   createReport,
   deleteMaterialGas,
   deleteMaterialVapor,
@@ -10,6 +11,7 @@ import {
   getMaterialsVapor,
   getReports,
   summarizeGasInventory,
+  updateMaterialOrder,
   updateReport,
   updateMaterialGas,
   updateMaterialVapor,
@@ -24,6 +26,7 @@ interface Material {
   existing: number;
   counted: number;
   description: string;
+  order_index?: number;
 }
 
 interface ReportDifference extends Material {
@@ -58,6 +61,7 @@ const newMaterialDescription = ref('');
 const newMaterialType = ref<MaterialType>('gas');
 const editingId = ref<string | null>(null);
 const editingType = ref<MaterialType | null>(null);
+const editingTargetType = ref<MaterialType>('gas');
 const editingName = ref('');
 const editingExisting = ref(0);
 const editingDescription = ref('');
@@ -80,6 +84,7 @@ const gasSummary = ref('');
 const gasSummaryLoading = ref(false);
 const gasSummaryError = ref('');
 const reportTimeZone = 'America/Mexico_City';
+const draggingMaterial = ref<{ id: string; type: MaterialType } | null>(null);
 
 const currentType = computed<MaterialType>(() => (view.value === 'gas' ? 'gas' : 'vapor'));
 const currentMaterials = computed(() => (currentType.value === 'gas' ? materialsGas.value : materialsVapor.value));
@@ -308,6 +313,7 @@ async function deleteMaterial(id: string, type: MaterialType) {
 function startEditing(material: Material, type: MaterialType) {
   editingId.value = material.id;
   editingType.value = type;
+  editingTargetType.value = type;
   editingName.value = material.name;
   editingExisting.value = material.existing;
   editingDescription.value = material.description;
@@ -316,6 +322,7 @@ function startEditing(material: Material, type: MaterialType) {
 function cancelEdit() {
   editingId.value = null;
   editingType.value = null;
+  editingTargetType.value = 'gas';
   editingName.value = '';
   editingExisting.value = 0;
   editingDescription.value = '';
@@ -334,14 +341,24 @@ async function saveEdit() {
   };
 
   try {
-    const updatedMaterial =
-      editingType.value === 'gas'
-        ? await updateMaterialGas(editingId.value, payload)
-        : await updateMaterialVapor(editingId.value, payload);
+    if (editingTargetType.value !== editingType.value) {
+      const movedMaterial = await changeMaterialType(editingType.value, editingId.value, {
+        ...payload,
+        type: editingTargetType.value,
+      });
+      collection.value = collection.value.filter((material) => material.id !== editingId.value);
+      const targetCollection = editingTargetType.value === 'gas' ? materialsGas : materialsVapor;
+      targetCollection.value = [...targetCollection.value, movedMaterial];
+    } else {
+      const updatedMaterial =
+        editingType.value === 'gas'
+          ? await updateMaterialGas(editingId.value, payload)
+          : await updateMaterialVapor(editingId.value, payload);
 
-    collection.value = collection.value.map((material) =>
-      material.id === editingId.value ? updatedMaterial : material
-    );
+      collection.value = collection.value.map((material) =>
+        material.id === editingId.value ? updatedMaterial : material
+      );
+    }
     showNotification(`Material "${payload.name}" actualizado correctamente.`);
     cancelEdit();
   } catch (error) {
@@ -508,6 +525,48 @@ function markMaterialComplete(material: Material, type: MaterialType) {
   handleCountedChange(material.id, material.existing, type);
 }
 
+function reorderMaterials(collection: Material[], draggedId: string, targetId: string) {
+  const draggedIndex = collection.findIndex((material) => material.id === draggedId);
+  const targetIndex = collection.findIndex((material) => material.id === targetId);
+  if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) return collection;
+
+  const reordered = [...collection];
+  const [dragged] = reordered.splice(draggedIndex, 1);
+  reordered.splice(targetIndex, 0, dragged);
+  return reordered;
+}
+
+function handleMaterialDragStart(material: Material, type: MaterialType) {
+  draggingMaterial.value = { id: material.id, type };
+}
+
+function handleMaterialDragEnd() {
+  draggingMaterial.value = null;
+}
+
+async function handleMaterialDrop(targetMaterial: Material, targetType: MaterialType) {
+  const dragged = draggingMaterial.value;
+  draggingMaterial.value = null;
+  if (!dragged || dragged.type !== targetType || dragged.id === targetMaterial.id) return;
+
+  const collection = targetType === 'gas' ? materialsGas : materialsVapor;
+  const previousOrder = collection.value;
+  const reordered = reorderMaterials(collection.value, dragged.id, targetMaterial.id);
+  if (reordered === previousOrder) return;
+
+  collection.value = reordered;
+
+  try {
+    const savedOrder = await updateMaterialOrder(targetType, reordered.map((material) => material.id));
+    collection.value = savedOrder;
+    showNotification('Orden de materiales actualizado correctamente.');
+  } catch (error) {
+    console.error(error);
+    collection.value = previousOrder;
+    showNotification('Error actualizando el orden de materiales', 'error');
+  }
+}
+
 function toggleReportSearch() {
   showReportSearch.value = !showReportSearch.value;
 }
@@ -601,8 +660,21 @@ function unlockStockPage() {
       <div v-if="stockAuthenticated" class="section-block">
         <h2>Materiales de Gas</h2>
         <ul>
-          <li v-for="material in materialsGas" :key="material.id">
+          <li
+            v-for="material in materialsGas"
+            :key="material.id"
+            class="draggable-material"
+            draggable="true"
+            @dragstart="handleMaterialDragStart(material, 'gas')"
+            @dragend="handleMaterialDragEnd"
+            @dragover.prevent
+            @drop="handleMaterialDrop(material, 'gas')"
+          >
             <div v-if="editingId === material.id && editingType === 'gas'" class="edit-form">
+              <select v-model="editingTargetType">
+                <option value="gas">Gas</option>
+                <option value="vapor">Vapor</option>
+              </select>
               <input v-model="editingName" type="text" placeholder="Nombre" />
               <input v-model="editingDescription" type="text" placeholder="Descripcion" />
               <input v-model.number="editingExisting" type="number" placeholder="Cantidad en stock" />
@@ -622,8 +694,21 @@ function unlockStockPage() {
       <div v-if="stockAuthenticated" class="section-block">
         <h2>Materiales de Vapor</h2>
         <ul>
-          <li v-for="material in materialsVapor" :key="material.id">
+          <li
+            v-for="material in materialsVapor"
+            :key="material.id"
+            class="draggable-material"
+            draggable="true"
+            @dragstart="handleMaterialDragStart(material, 'vapor')"
+            @dragend="handleMaterialDragEnd"
+            @dragover.prevent
+            @drop="handleMaterialDrop(material, 'vapor')"
+          >
             <div v-if="editingId === material.id && editingType === 'vapor'" class="edit-form">
+              <select v-model="editingTargetType">
+                <option value="gas">Gas</option>
+                <option value="vapor">Vapor</option>
+              </select>
               <input v-model="editingName" type="text" placeholder="Nombre" />
               <input v-model="editingDescription" type="text" placeholder="Descripcion" />
               <input v-model.number="editingExisting" type="number" placeholder="Cantidad en stock" />

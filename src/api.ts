@@ -7,6 +7,8 @@ export interface MaterialPayload {
   description: string;
 }
 
+export type MaterialType = 'gas' | 'vapor';
+
 async function request<T = any>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) },
@@ -46,6 +48,22 @@ export const updateMaterialVapor = (id: string, material: MaterialPayload) =>
   request(`/materials/vapor/${id}`, {
     method: 'PUT',
     body: JSON.stringify(material),
+  });
+
+export const changeMaterialType = (
+  currentType: MaterialType,
+  id: string,
+  material: MaterialPayload & { type: MaterialType }
+) =>
+  request(`/materials/${currentType}/${id}/type`, {
+    method: 'PUT',
+    body: JSON.stringify(material),
+  });
+
+export const updateMaterialOrder = (type: MaterialType, ids: string[]) =>
+  request(`/materials/${type}/order`, {
+    method: 'PUT',
+    body: JSON.stringify({ ids }),
   });
 
 export const deleteMaterialGas = (id: string) =>

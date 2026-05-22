@@ -49,6 +49,14 @@ class MaterialPayload(BaseModel):
     description: str = ""
 
 
+class MaterialTypeChangePayload(MaterialPayload):
+    type: MaterialType
+
+
+class MaterialOrderPayload(BaseModel):
+    ids: list[str]
+
+
 class ReportDifferencePayload(BaseModel):
     material_id: str | None = None
     material_name: str | None = None
@@ -103,6 +111,7 @@ def normalize_material(row) -> dict:
         "existing": material["existing"],
         "counted": material["counted"],
         "description": material["description"] or "",
+        "order_index": material.get("order_index", 0),
         "created_at": material.get("created_at"),
         "updated_at": material.get("updated_at"),
     }
@@ -165,7 +174,7 @@ def health() -> dict:
 def get_materials(material_type: MaterialType) -> list[dict]:
     table = table_for_type(material_type)
     with get_engine().begin() as connection:
-        rows = connection.execute(select(table).order_by(table.c.created_at)).fetchall()
+        rows = connection.execute(select(table).order_by(table.c.order_index, table.c.created_at)).fetchall()
     return [normalize_material(row) for row in rows]
 
 
@@ -186,6 +195,9 @@ def create_material(material_type: MaterialType, payload: MaterialPayload) -> di
         raise HTTPException(status_code=400, detail="Material name is required")
 
     with get_engine().begin() as connection:
+        next_order = connection.execute(
+            select(func.coalesce(func.max(table.c.order_index), -1) + 1)
+        ).scalar_one()
         try:
             connection.execute(
                 insert(table).values(
@@ -194,6 +206,7 @@ def create_material(material_type: MaterialType, payload: MaterialPayload) -> di
                     existing=payload.existing,
                     counted=payload.counted,
                     description=payload.description,
+                    order_index=next_order,
                 )
             )
         except Exception as exc:
@@ -202,6 +215,29 @@ def create_material(material_type: MaterialType, payload: MaterialPayload) -> di
         row = connection.execute(select(table).where(table.c.id == material_id)).first()
 
     return normalize_material(row)
+
+
+@app.put("/api/materials/{material_type}/order")
+def update_material_order(material_type: MaterialType, payload: MaterialOrderPayload) -> list[dict]:
+    table = table_for_type(material_type)
+    with get_engine().begin() as connection:
+        existing_ids = {
+            row._mapping["id"]
+            for row in connection.execute(select(table.c.id)).fetchall()
+        }
+        if len(payload.ids) != len(existing_ids) or set(payload.ids) != existing_ids:
+            raise HTTPException(status_code=400, detail="Material order does not match current materials")
+
+        for order_index, material_id in enumerate(payload.ids):
+            connection.execute(
+                update(table)
+                .where(table.c.id == material_id)
+                .values(order_index=order_index, updated_at=func.now())
+            )
+
+        rows = connection.execute(select(table).order_by(table.c.order_index, table.c.created_at)).fetchall()
+
+    return [normalize_material(row) for row in rows]
 
 
 @app.put("/api/materials/{material_type}/{material_id}")
@@ -227,6 +263,54 @@ def update_material(material_type: MaterialType, material_id: str, payload: Mate
             raise HTTPException(status_code=404, detail="Material not found")
 
         row = connection.execute(select(table).where(table.c.id == material_id)).first()
+
+    return normalize_material(row)
+
+
+@app.put("/api/materials/{material_type}/{material_id}/type")
+def change_material_type(
+    material_type: MaterialType,
+    material_id: str,
+    payload: MaterialTypeChangePayload,
+) -> dict:
+    source_table = table_for_type(material_type)
+    target_table = table_for_type(payload.type)
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Material name is required")
+
+    if payload.type == material_type:
+        return update_material(material_type, material_id, payload)
+
+    with get_engine().begin() as connection:
+        source_row = connection.execute(
+            select(source_table).where(source_table.c.id == material_id)
+        ).first()
+        if not source_row:
+            raise HTTPException(status_code=404, detail="Material not found")
+
+        duplicate = connection.execute(
+            select(target_table.c.id).where(target_table.c.id == material_id)
+        ).first()
+        if duplicate:
+            raise HTTPException(status_code=400, detail="Material already exists in target type")
+
+        next_order = connection.execute(
+            select(func.coalesce(func.max(target_table.c.order_index), -1) + 1)
+        ).scalar_one()
+
+        connection.execute(
+            insert(target_table).values(
+                id=material_id,
+                name=name,
+                existing=payload.existing,
+                counted=payload.counted,
+                description=payload.description,
+                order_index=next_order,
+            )
+        )
+        connection.execute(delete(source_table).where(source_table.c.id == material_id))
+        row = connection.execute(select(target_table).where(target_table.c.id == material_id)).first()
 
     return normalize_material(row)
 
