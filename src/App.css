@@ -277,9 +277,41 @@ table tbody tr:nth-child(even) {
   box-shadow: 0 10px 24px rgba(31, 41, 51, 0.08);
 }
 
-.report-block.current-report {
+.report-block.current-report,
+.report-card.current-report {
   border: 2px solid #0e7490;
   background: #f0fbfd;
+}
+
+.report-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 22px;
+}
+
+.report-card {
+  padding: 18px;
+  border: 1px solid #dbe3ea;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(31, 41, 51, 0.07);
+}
+
+.report-card h2 {
+  margin-top: 0;
+  font-size: 20px;
+}
+
+.report-card-meta {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+
+.report-card-meta span {
+  color: #334155;
+  line-height: 1.35;
 }
 
 .current-report-label {

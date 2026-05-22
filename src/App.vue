@@ -73,6 +73,7 @@ const showReportSearch = ref(false);
 const reportSearchDate = ref('');
 const highlightedReportId = ref<string | null>(null);
 const printingReportId = ref<string | null>(null);
+const selectedReportId = ref<string | null>(null);
 const stockPassword = ref('');
 const stockAuthenticated = ref(false);
 const gasSummary = ref('');
@@ -104,6 +105,9 @@ const filteredReports = computed(() => {
   if (!reportSearchDate.value) return reports.value;
   return reports.value.filter((report) => report.timestamp.slice(0, 10) === reportSearchDate.value);
 });
+const selectedReport = computed(() =>
+  filteredReports.value.find((report) => report.id === selectedReportId.value) || null
+);
 
 onMounted(() => {
   loadData();
@@ -144,6 +148,7 @@ function setView(nextView: View) {
     showReportSearch.value = false;
     reportSearchDate.value = '';
     highlightedReportId.value = null;
+    selectedReportId.value = null;
   }
 }
 
@@ -334,6 +339,7 @@ async function saveReport(type: MaterialType, reportDifferences: ReportDifferenc
     reportSearchDate.value = '';
     showReportSearch.value = false;
     highlightedReportId.value = newReport.id;
+    selectedReportId.value = newReport.id;
     view.value = 'reports';
     showNotification(`Reporte de ${type === 'gas' ? 'Gas' : 'Vapor'} guardado correctamente.`);
   } catch (error) {
@@ -469,6 +475,15 @@ function toggleReportSearch() {
 
 function clearReportSearch() {
   reportSearchDate.value = '';
+  selectedReportId.value = null;
+}
+
+function selectReport(reportId: string) {
+  selectedReportId.value = reportId;
+}
+
+function closeSelectedReport() {
+  selectedReportId.value = null;
 }
 
 async function printReport(reportId: string) {
@@ -597,35 +612,59 @@ function unlockStockPage() {
       <button class="no-print" @click="setView('home')">Volver</button>
 
       <div v-if="showReportSearch" class="report-search-panel no-print">
-        <input v-model="reportSearchDate" type="date" />
+        <input v-model="reportSearchDate" type="date" @change="selectedReportId = null" />
         <button @click="clearReportSearch">Limpiar Busqueda</button>
       </div>
 
       <p v-if="reports.length === 0">No hay reportes guardados.</p>
       <p v-else-if="filteredReports.length === 0">No hay reportes para la fecha seleccionada.</p>
-      <div v-else>
+      <div v-else-if="!selectedReport" class="report-card-grid">
         <article
           v-for="report in filteredReports"
           :key="report.id"
+          :class="['report-card', { 'current-report': highlightedReportId === report.id }]"
+        >
+          <div v-if="highlightedReportId === report.id" class="current-report-label">
+            Reporte guardado actualmente
+          </div>
+          <h2>{{ report.type === 'gas' ? 'Conteo de Gas' : 'Conteo de Vapor' }}</h2>
+          <div class="report-card-meta">
+            <span><strong>Fecha:</strong> {{ report.timestamp }}</span>
+            <span><strong>Usuario:</strong> {{ report.user_name || 'Sin usuario' }}</span>
+            <span><strong>Turno:</strong> {{ report.shift || 'Sin turno' }}</span>
+            <span>
+              <strong>Diferencias:</strong>
+              {{ report.differences.filter((diff) => diff.difference !== 0).length }}
+            </span>
+          </div>
+          <button class="info-button" @click="selectReport(report.id)">
+            Visualizar Reporte
+          </button>
+        </article>
+      </div>
+      <div v-else>
+        <button class="no-print" @click="closeSelectedReport">Ver lista de reportes</button>
+        <article
+          :key="selectedReport.id"
           :class="[
             'report-block',
             {
-              'current-report': highlightedReportId === report.id,
-              'report-print-target': printingReportId === report.id,
+              'current-report': highlightedReportId === selectedReport.id,
+              'report-print-target': printingReportId === selectedReport.id,
             },
           ]"
         >
-          <div v-if="highlightedReportId === report.id" class="current-report-label no-print">
+          <div v-if="highlightedReportId === selectedReport.id" class="current-report-label no-print">
             Reporte guardado actualmente
           </div>
-          <h2>{{ report.type === 'gas' ? 'Conteo de Gas' : 'Conteo de Vapor' }} - {{ report.timestamp }}</h2>
-          <div v-if="editingReportId === report.id" class="report-meta edit-form">
+          <h2>{{ selectedReport.type === 'gas' ? 'Conteo de Gas' : 'Conteo de Vapor' }} - {{ selectedReport.timestamp }}</h2>
+          <div v-if="editingReportId === selectedReport.id" class="report-meta edit-form">
             <input v-model="editReportUserName" type="text" placeholder="Nombre de usuario" />
             <input v-model="editReportShift" type="text" placeholder="Turno" />
           </div>
           <div v-else class="report-meta">
-            <span><strong>Usuario:</strong> {{ report.user_name || 'Sin usuario' }}</span>
-            <span><strong>Turno:</strong> {{ report.shift || 'Sin turno' }}</span>
+            <span><strong>Usuario:</strong> {{ selectedReport.user_name || 'Sin usuario' }}</span>
+            <span><strong>Turno:</strong> {{ selectedReport.shift || 'Sin turno' }}</span>
           </div>
           <table class="report-differences-table">
             <thead>
@@ -639,7 +678,7 @@ function unlockStockPage() {
                 <th>Diferencia</th>
               </tr>
             </thead>
-            <tbody v-if="editingReportId === report.id">
+            <tbody v-if="editingReportId === selectedReport.id">
               <tr
                 v-for="diff in editReportDifferences"
                 :key="diff.id"
@@ -682,7 +721,7 @@ function unlockStockPage() {
             </tbody>
             <tbody v-else>
               <tr
-                v-for="diff in report.differences"
+                v-for="diff in selectedReport.differences"
                 :key="diff.id"
                 :class="{ 'print-hide-no-difference': diff.difference === 0 }"
               >
@@ -699,38 +738,38 @@ function unlockStockPage() {
             </tbody>
           </table>
           <button
-            v-if="editingReportId !== report.id"
+            v-if="editingReportId !== selectedReport.id"
             class="info-button no-print"
-            @click="startReportEdit(report)"
+            @click="startReportEdit(selectedReport)"
           >
             Editar Reporte
           </button>
           <button
-            v-if="editingReportId !== report.id"
+            v-if="editingReportId !== selectedReport.id"
             class="warning-button no-print"
-            @click="printReport(report.id)"
+            @click="printReport(selectedReport.id)"
           >
             Imprimir Reporte
           </button>
           <button
-            v-if="editingReportId === report.id"
+            v-if="editingReportId === selectedReport.id"
             class="success-button no-print"
-            @click="saveReportEdit(report)"
+            @click="saveReportEdit(selectedReport)"
           >
             Guardar Cambios del Reporte
           </button>
-          <button v-if="editingReportId === report.id" class="no-print" @click="cancelReportEdit">
+          <button v-if="editingReportId === selectedReport.id" class="no-print" @click="cancelReportEdit">
             Cancelar
           </button>
           <button
-            v-if="editingReportId !== report.id"
+            v-if="editingReportId !== selectedReport.id"
             class="success-button no-print"
-            @click="saveStockUpdate(report)"
+            @click="saveStockUpdate(selectedReport)"
           >
             Guardar Actualizacion de Stock
           </button>
 
-          <div v-if="updatedReports.includes(report.id)" class="stock-summary">
+          <div v-if="updatedReports.includes(selectedReport.id)" class="stock-summary">
             <h3>Actualizacion de Stock Completada</h3>
             <table>
               <thead>
@@ -743,7 +782,7 @@ function unlockStockPage() {
               </thead>
               <tbody>
                 <tr
-                  v-for="diff in report.differences"
+                  v-for="diff in selectedReport.differences"
                   :key="diff.id"
                   :class="{ 'print-hide-no-difference': diff.difference === 0 }"
                 >
