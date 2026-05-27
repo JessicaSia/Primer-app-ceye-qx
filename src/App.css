@@ -417,6 +417,22 @@ table tbody tr:nth-child(even) {
   font-weight: 700;
 }
 
+.stock-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.stock-list-header h2 {
+  flex: 1;
+  margin: 0;
+}
+
+.stock-list-header button {
+  flex-shrink: 0;
+}
+
 .empty-search-result {
   color: #607080;
   text-align: center;
@@ -530,7 +546,8 @@ table tbody tr:nth-child(even) {
   .report-material-search,
   .ai-summary-header,
   .stock-lock-panel,
-  .stock-search-controls {
+  .stock-search-controls,
+  .stock-list-header {
     align-items: stretch;
     flex-direction: column;
   }

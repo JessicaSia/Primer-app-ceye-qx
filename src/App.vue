@@ -82,6 +82,8 @@ const selectedReportId = ref<string | null>(null);
 const stockPassword = ref('');
 const stockAuthenticated = ref(false);
 const stockMaterialSearch = ref('');
+const showStockGasMaterials = ref(false);
+const showStockVaporMaterials = ref(false);
 const gasSummary = ref('');
 const gasSummaryLoading = ref(false);
 const gasSummaryError = ref('');
@@ -175,6 +177,8 @@ function setView(nextView: View) {
   }
   if (nextView !== 'stock') {
     stockMaterialSearch.value = '';
+    showStockGasMaterials.value = false;
+    showStockVaporMaterials.value = false;
   }
 }
 
@@ -229,6 +233,24 @@ function filterMaterialsByName(materials: Material[], searchValue: string) {
   if (!search) return materials;
 
   return materials.filter((material) => normalizeSearchText(material.name).includes(search));
+}
+
+function handleStockMaterialSearch(event: Event) {
+  const input = event.target as HTMLInputElement;
+  if (!input.value.trim()) {
+    showStockGasMaterials.value = false;
+    showStockVaporMaterials.value = false;
+    return;
+  }
+
+  showStockGasMaterials.value = filterMaterialsByName(materialsGas.value, input.value).length > 0;
+  showStockVaporMaterials.value = filterMaterialsByName(materialsVapor.value, input.value).length > 0;
+}
+
+function clearStockMaterialSearch() {
+  stockMaterialSearch.value = '';
+  showStockGasMaterials.value = false;
+  showStockVaporMaterials.value = false;
 }
 
 function getReportDate(timestamp: string) {
@@ -701,20 +723,26 @@ function unlockStockPage() {
             type="search"
             aria-label="Buscar material en stock"
             placeholder="Escribe el nombre del material..."
+            @input="handleStockMaterialSearch"
           />
           <span>
             {{ filteredStockMaterialCount }} de {{ materialsGas.length + materialsVapor.length }} materiales
           </span>
-          <button v-if="stockMaterialSearch" @click="stockMaterialSearch = ''">Limpiar</button>
+          <button v-if="stockMaterialSearch" @click="clearStockMaterialSearch">Limpiar</button>
         </div>
       </div>
 
       <div v-if="stockAuthenticated" class="section-block">
-        <h2>Materiales de Gas</h2>
-        <p v-if="filteredStockMaterialsGas.length === 0" class="empty-search-result">
+        <div class="stock-list-header">
+          <h2>Materiales de Gas</h2>
+          <button class="info-button" @click="showStockGasMaterials = !showStockGasMaterials">
+            {{ showStockGasMaterials ? 'Ocultar lista' : 'Mostrar lista' }}
+          </button>
+        </div>
+        <p v-if="showStockGasMaterials && filteredStockMaterialsGas.length === 0" class="empty-search-result">
           No se encontraron materiales de gas con ese nombre.
         </p>
-        <ul>
+        <ul v-if="showStockGasMaterials">
           <li
             v-for="material in filteredStockMaterialsGas"
             :key="material.id"
@@ -747,11 +775,16 @@ function unlockStockPage() {
       </div>
 
       <div v-if="stockAuthenticated" class="section-block">
-        <h2>Materiales de Vapor</h2>
-        <p v-if="filteredStockMaterialsVapor.length === 0" class="empty-search-result">
+        <div class="stock-list-header">
+          <h2>Materiales de Vapor</h2>
+          <button class="info-button" @click="showStockVaporMaterials = !showStockVaporMaterials">
+            {{ showStockVaporMaterials ? 'Ocultar lista' : 'Mostrar lista' }}
+          </button>
+        </div>
+        <p v-if="showStockVaporMaterials && filteredStockMaterialsVapor.length === 0" class="empty-search-result">
           No se encontraron materiales de vapor con ese nombre.
         </p>
-        <ul>
+        <ul v-if="showStockVaporMaterials">
           <li
             v-for="material in filteredStockMaterialsVapor"
             :key="material.id"
