@@ -73,6 +73,7 @@ const editingReportId = ref<string | null>(null);
 const editReportUserName = ref('');
 const editReportShift = ref('');
 const editReportDifferences = ref<ReportDifference[]>([]);
+const editReportMaterialSearch = ref('');
 const showReportSearch = ref(false);
 const reportSearchDate = ref('');
 const highlightedReportId = ref<string | null>(null);
@@ -107,6 +108,14 @@ const adjustedDifferences = computed(() =>
     };
   })
 );
+const filteredEditReportDifferences = computed(() => {
+  const search = normalizeSearchText(editReportMaterialSearch.value);
+  if (!search) return editReportDifferences.value;
+
+  return editReportDifferences.value.filter((diff) =>
+    normalizeSearchText(diff.name).includes(search)
+  );
+});
 const filteredReports = computed(() => {
   if (!reportSearchDate.value) return reports.value;
   return reports.value.filter((report) => getReportDateKey(report.timestamp) === reportSearchDate.value);
@@ -195,6 +204,13 @@ function reportBaseCount(diff: ReportDifference) {
 
 function formatDifference(value: number) {
   return value > 0 ? `+${value}` : String(value);
+}
+
+function normalizeSearchText(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase();
 }
 
 function getReportDate(timestamp: string) {
@@ -409,6 +425,7 @@ function startReportEdit(report: Report) {
   editReportUserName.value = report.user_name || '';
   editReportShift.value = report.shift || '';
   editReportDifferences.value = report.differences.map((diff) => ({ ...diff }));
+  editReportMaterialSearch.value = '';
 }
 
 function cancelReportEdit() {
@@ -416,6 +433,7 @@ function cancelReportEdit() {
   editReportUserName.value = '';
   editReportShift.value = '';
   editReportDifferences.value = [];
+  editReportMaterialSearch.value = '';
 }
 
 function updateEditReportField(
@@ -793,6 +811,24 @@ function unlockStockPage() {
             <span><strong>Usuario:</strong> {{ selectedReport.user_name || 'Sin usuario' }}</span>
             <span><strong>Turno:</strong> {{ selectedReport.shift || 'Sin turno' }}</span>
           </div>
+          <div
+            v-if="editingReportId === selectedReport.id"
+            class="report-material-search no-print"
+          >
+            <input
+              v-model="editReportMaterialSearch"
+              type="search"
+              aria-label="Buscar material para editar"
+              placeholder="Buscar material por nombre..."
+              autofocus
+            />
+            <span>
+              {{ filteredEditReportDifferences.length }} de {{ editReportDifferences.length }} materiales
+            </span>
+            <button v-if="editReportMaterialSearch" @click="editReportMaterialSearch = ''">
+              Limpiar
+            </button>
+          </div>
           <table class="report-differences-table">
             <thead>
               <tr>
@@ -807,7 +843,7 @@ function unlockStockPage() {
             </thead>
             <tbody v-if="editingReportId === selectedReport.id">
               <tr
-                v-for="diff in editReportDifferences"
+                v-for="diff in filteredEditReportDifferences"
                 :key="diff.id"
                 :class="{ 'print-hide-no-difference': diff.difference === 0 }"
               >
@@ -843,6 +879,11 @@ function unlockStockPage() {
                 <td>{{ diff.counted }}</td>
                 <td :class="diff.difference !== 0 ? 'difference-alert' : 'difference-ok'">
                   {{ formatDifference(diff.difference) }}
+                </td>
+              </tr>
+              <tr v-if="filteredEditReportDifferences.length === 0">
+                <td colspan="7" class="empty-search-result">
+                  No se encontro ningun material con ese nombre.
                 </td>
               </tr>
             </tbody>

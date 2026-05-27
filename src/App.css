@@ -126,7 +126,8 @@ select,
 input[type="text"],
 input[type="number"],
 input[type="password"],
-input[type="date"] {
+input[type="date"],
+input[type="search"] {
   padding: 11px 12px;
   margin: 6px;
   min-height: 42px;
@@ -144,7 +145,8 @@ select:focus,
 input[type="text"]:focus,
 input[type="number"]:focus,
 input[type="password"]:focus,
-input[type="date"]:focus {
+input[type="date"]:focus,
+input[type="search"]:focus {
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
 }
@@ -372,6 +374,32 @@ table tbody tr:nth-child(even) {
   box-shadow: 0 7px 18px rgba(31, 41, 51, 0.06);
 }
 
+.report-material-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 14px 0 4px;
+}
+
+.report-material-search input {
+  flex: 1;
+  min-width: 250px;
+  margin-left: 0;
+}
+
+.report-material-search span {
+  color: #607080;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.empty-search-result {
+  color: #607080;
+  text-align: center;
+  font-weight: 700;
+}
+
 .small-input {
   width: 90px;
 }
@@ -476,6 +504,7 @@ table tbody tr:nth-child(even) {
   .report-meta,
   .report-required-fields,
   .report-search-panel,
+  .report-material-search,
   .ai-summary-header,
   .stock-lock-panel {
     align-items: stretch;
