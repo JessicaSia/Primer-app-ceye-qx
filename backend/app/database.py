@@ -49,6 +49,29 @@ materials_vapor = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
+material_lists = Table(
+    "material_lists",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("name", String, nullable=False, unique=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+custom_materials = Table(
+    "custom_materials",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("list_id", String, ForeignKey("material_lists.id", ondelete="CASCADE"), nullable=False),
+    Column("name", String, nullable=False),
+    Column("existing", Integer, nullable=False, server_default="0"),
+    Column("counted", Integer, nullable=False, server_default="0"),
+    Column("description", String, nullable=False, server_default=""),
+    Column("order_index", Integer, nullable=False, server_default="0"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
 reports = Table(
     "reports",
     metadata,

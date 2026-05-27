@@ -9,6 +9,12 @@ export interface MaterialPayload {
 
 export type MaterialType = 'gas' | 'vapor';
 
+export interface MaterialList {
+  id: string;
+  name: string;
+  materials: Array<MaterialPayload & { id: string; counted: number; order_index?: number }>;
+}
+
 async function request<T = any>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) },
@@ -25,6 +31,7 @@ async function request<T = any>(path: string, options?: RequestInit): Promise<T>
 
 export const getMaterialsGas = () => request('/materials/gas');
 export const getMaterialsVapor = () => request('/materials/vapor');
+export const getMaterialLists = () => request<MaterialList[]>('/material-lists');
 
 export const addMaterialGas = (material: MaterialPayload) =>
   request('/materials/gas', {
@@ -71,6 +78,36 @@ export const deleteMaterialGas = (id: string) =>
 
 export const deleteMaterialVapor = (id: string) =>
   request(`/materials/vapor/${id}`, { method: 'DELETE' });
+
+export const createMaterialList = (name: string) =>
+  request<MaterialList>('/material-lists', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+
+export const deleteMaterialList = (id: string) =>
+  request(`/material-lists/${id}`, { method: 'DELETE' });
+
+export const addCustomMaterial = (listId: string, material: MaterialPayload) =>
+  request(`/material-lists/${listId}/materials`, {
+    method: 'POST',
+    body: JSON.stringify({ id: Date.now().toString(), ...material }),
+  });
+
+export const updateCustomMaterial = (listId: string, id: string, material: MaterialPayload) =>
+  request(`/material-lists/${listId}/materials/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(material),
+  });
+
+export const deleteCustomMaterial = (listId: string, id: string) =>
+  request(`/material-lists/${listId}/materials/${id}`, { method: 'DELETE' });
+
+export const updateCustomMaterialOrder = (listId: string, ids: string[]) =>
+  request(`/material-lists/${listId}/materials/order`, {
+    method: 'PUT',
+    body: JSON.stringify({ ids }),
+  });
 
 export const getReports = () => request('/reports');
 

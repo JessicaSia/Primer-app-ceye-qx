@@ -10,9 +10,11 @@ from sqlalchemy import delete, desc, func, insert, select, update
 
 from ai_api import summarize_gas_inventory
 from .database import (
+    custom_materials,
     get_database_url,
     get_engine,
     init_db,
+    material_lists,
     report_differences,
     reports,
     table_for_type,
@@ -55,6 +57,10 @@ class MaterialTypeChangePayload(MaterialPayload):
 
 class MaterialOrderPayload(BaseModel):
     ids: list[str]
+
+
+class MaterialListPayload(BaseModel):
+    name: str = Field(min_length=1)
 
 
 class ReportDifferencePayload(BaseModel):
@@ -117,6 +123,17 @@ def normalize_material(row) -> dict:
     }
 
 
+def normalize_material_list(row, materials: list[dict] | None = None) -> dict:
+    item = row_to_dict(row)
+    return {
+        "id": item["id"],
+        "name": item["name"],
+        "materials": materials or [],
+        "created_at": item.get("created_at"),
+        "updated_at": item.get("updated_at"),
+    }
+
+
 def normalize_difference(row) -> dict:
     diff = row_to_dict(row)
     return {
@@ -176,6 +193,148 @@ def get_materials(material_type: MaterialType) -> list[dict]:
     with get_engine().begin() as connection:
         rows = connection.execute(select(table).order_by(table.c.order_index, table.c.created_at)).fetchall()
     return [normalize_material(row) for row in rows]
+
+
+@app.get("/api/material-lists")
+def get_material_lists() -> list[dict]:
+    result = []
+    with get_engine().begin() as connection:
+        list_rows = connection.execute(
+            select(material_lists).order_by(material_lists.c.created_at)
+        ).fetchall()
+        for item in list_rows:
+            rows = connection.execute(
+                select(custom_materials)
+                .where(custom_materials.c.list_id == item._mapping["id"])
+                .order_by(custom_materials.c.order_index, custom_materials.c.created_at)
+            ).fetchall()
+            result.append(normalize_material_list(item, [normalize_material(row) for row in rows]))
+    return result
+
+
+@app.post("/api/material-lists", status_code=201)
+def create_material_list(payload: MaterialListPayload) -> dict:
+    list_id = str(uuid4())
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="List name is required")
+    if name.lower() in {"gas", "vapor"}:
+        raise HTTPException(status_code=400, detail="Gas and Vapor are system lists")
+
+    with get_engine().begin() as connection:
+        duplicate = connection.execute(
+            select(material_lists.c.id).where(func.lower(material_lists.c.name) == name.lower())
+        ).first()
+        if duplicate:
+            raise HTTPException(status_code=400, detail="A list with this name already exists")
+        connection.execute(insert(material_lists).values(id=list_id, name=name))
+        row = connection.execute(select(material_lists).where(material_lists.c.id == list_id)).first()
+
+    return normalize_material_list(row)
+
+
+@app.delete("/api/material-lists/{list_id}")
+def delete_material_list(list_id: str) -> dict:
+    with get_engine().begin() as connection:
+        connection.execute(delete(custom_materials).where(custom_materials.c.list_id == list_id))
+        result = connection.execute(delete(material_lists).where(material_lists.c.id == list_id))
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="List not found")
+    return {"message": "Deleted", "id": list_id}
+
+
+@app.post("/api/material-lists/{list_id}/materials", status_code=201)
+def create_custom_material(list_id: str, payload: MaterialPayload) -> dict:
+    material_id = payload.id or str(uuid4())
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Material name is required")
+
+    with get_engine().begin() as connection:
+        if not connection.execute(select(material_lists.c.id).where(material_lists.c.id == list_id)).first():
+            raise HTTPException(status_code=404, detail="List not found")
+        next_order = connection.execute(
+            select(func.coalesce(func.max(custom_materials.c.order_index), -1) + 1)
+            .where(custom_materials.c.list_id == list_id)
+        ).scalar_one()
+        connection.execute(
+            insert(custom_materials).values(
+                id=material_id,
+                list_id=list_id,
+                name=name,
+                existing=payload.existing,
+                counted=payload.counted,
+                description=payload.description,
+                order_index=next_order,
+            )
+        )
+        row = connection.execute(select(custom_materials).where(custom_materials.c.id == material_id)).first()
+    return normalize_material(row)
+
+
+@app.put("/api/material-lists/{list_id}/materials/order")
+def update_custom_material_order(list_id: str, payload: MaterialOrderPayload) -> list[dict]:
+    with get_engine().begin() as connection:
+        existing_ids = {
+            row._mapping["id"]
+            for row in connection.execute(
+                select(custom_materials.c.id).where(custom_materials.c.list_id == list_id)
+            ).fetchall()
+        }
+        if len(payload.ids) != len(existing_ids) or set(payload.ids) != existing_ids:
+            raise HTTPException(status_code=400, detail="Material order does not match current materials")
+
+        for order_index, material_id in enumerate(payload.ids):
+            connection.execute(
+                update(custom_materials)
+                .where(custom_materials.c.id == material_id)
+                .where(custom_materials.c.list_id == list_id)
+                .values(order_index=order_index, updated_at=func.now())
+            )
+        rows = connection.execute(
+            select(custom_materials)
+            .where(custom_materials.c.list_id == list_id)
+            .order_by(custom_materials.c.order_index, custom_materials.c.created_at)
+        ).fetchall()
+    return [normalize_material(row) for row in rows]
+
+
+@app.put("/api/material-lists/{list_id}/materials/{material_id}")
+def update_custom_material(list_id: str, material_id: str, payload: MaterialPayload) -> dict:
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Material name is required")
+
+    with get_engine().begin() as connection:
+        result = connection.execute(
+            update(custom_materials)
+            .where(custom_materials.c.id == material_id)
+            .where(custom_materials.c.list_id == list_id)
+            .values(
+                name=name,
+                existing=payload.existing,
+                counted=payload.counted,
+                description=payload.description,
+                updated_at=func.now(),
+            )
+        )
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Material not found")
+        row = connection.execute(select(custom_materials).where(custom_materials.c.id == material_id)).first()
+    return normalize_material(row)
+
+
+@app.delete("/api/material-lists/{list_id}/materials/{material_id}")
+def delete_custom_material(list_id: str, material_id: str) -> dict:
+    with get_engine().begin() as connection:
+        result = connection.execute(
+            delete(custom_materials)
+            .where(custom_materials.c.id == material_id)
+            .where(custom_materials.c.list_id == list_id)
+        )
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Material not found")
+    return {"message": "Deleted", "id": material_id}
 
 
 @app.post("/api/ai/gas-summary")
