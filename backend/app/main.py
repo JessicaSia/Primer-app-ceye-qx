@@ -161,6 +161,20 @@ def normalize_payload_differences(payload: ReportPayload) -> list[dict]:
     return normalized
 
 
+def merge_order_ids(requested_ids: list[str], existing_ids: list[str]) -> list[str]:
+    requested_set = set(requested_ids)
+    existing_set = set(existing_ids)
+
+    if len(requested_ids) != len(requested_set):
+        raise HTTPException(status_code=400, detail="Material order contains duplicate ids")
+
+    unknown_ids = requested_set - existing_set
+    if unknown_ids:
+        raise HTTPException(status_code=400, detail="Material order contains materials that no longer exist")
+
+    return requested_ids + [material_id for material_id in existing_ids if material_id not in requested_set]
+
+
 def build_report_response(report_row, differences: list[dict]) -> dict:
     report = row_to_dict(report_row)
     return {
@@ -263,16 +277,17 @@ def create_custom_material(list_id: str, payload: MaterialPayload) -> dict:
 @app.put("/api/material-lists/{list_id}/materials/order")
 def update_custom_material_order(list_id: str, payload: MaterialOrderPayload) -> list[dict]:
     with get_engine().begin() as connection:
-        existing_ids = {
+        existing_ids = [
             row._mapping["id"]
             for row in connection.execute(
-                select(custom_materials.c.id).where(custom_materials.c.list_id == list_id)
+                select(custom_materials.c.id)
+                .where(custom_materials.c.list_id == list_id)
+                .order_by(custom_materials.c.order_index, custom_materials.c.created_at)
             ).fetchall()
-        }
-        if len(payload.ids) != len(existing_ids) or set(payload.ids) != existing_ids:
-            raise HTTPException(status_code=400, detail="Material order does not match current materials")
+        ]
+        merged_ids = merge_order_ids(payload.ids, existing_ids)
 
-        for order_index, material_id in enumerate(payload.ids):
+        for order_index, material_id in enumerate(merged_ids):
             connection.execute(
                 update(custom_materials)
                 .where(custom_materials.c.id == material_id)
@@ -396,14 +411,15 @@ def create_material(material_type: MaterialType, payload: MaterialPayload) -> di
 def update_material_order(material_type: MaterialType, payload: MaterialOrderPayload) -> list[dict]:
     table = table_for_type(material_type)
     with get_engine().begin() as connection:
-        existing_ids = {
+        existing_ids = [
             row._mapping["id"]
-            for row in connection.execute(select(table.c.id)).fetchall()
-        }
-        if len(payload.ids) != len(existing_ids) or set(payload.ids) != existing_ids:
-            raise HTTPException(status_code=400, detail="Material order does not match current materials")
+            for row in connection.execute(
+                select(table.c.id).order_by(table.c.order_index, table.c.created_at)
+            ).fetchall()
+        ]
+        merged_ids = merge_order_ids(payload.ids, existing_ids)
 
-        for order_index, material_id in enumerate(payload.ids):
+        for order_index, material_id in enumerate(merged_ids):
             connection.execute(
                 update(table)
                 .where(table.c.id == material_id)

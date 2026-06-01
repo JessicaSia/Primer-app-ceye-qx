@@ -854,7 +854,7 @@ async function handleMaterialDrop(targetMaterial: Material, targetType: Material
   } catch (error) {
     console.error(error);
     collection.value = previousOrder;
-    showNotification('Error actualizando el orden de materiales', 'error');
+    showNotification(getErrorMessage(error, 'Error actualizando el orden de materiales'), 'error');
   }
 }
 
@@ -892,7 +892,7 @@ async function handleCustomMaterialDrop(targetMaterial: Material, listId: string
     customMaterialLists.value = customMaterialLists.value.map((item) =>
       item.id === listId ? { ...item, materials: previousOrder } : item
     );
-    showNotification('Error actualizando el orden de materiales', 'error');
+    showNotification(getErrorMessage(error, 'Error actualizando el orden de materiales'), 'error');
   }
 }
 
