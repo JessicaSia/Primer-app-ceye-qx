@@ -8,7 +8,6 @@ import {
   createMaterialList,
   createReport,
   deleteCustomMaterial,
-  deleteMaterialList,
   deleteMaterialGas,
   deleteMaterialVapor,
   getMaterialLists,
@@ -436,20 +435,6 @@ async function createNewMaterialList() {
   } catch (error) {
     console.error(error);
     showNotification('Error creando la nueva lista.', 'error');
-  }
-}
-
-async function removeCustomMaterialList(list: CustomMaterialList) {
-  if (!window.confirm(`Eliminar la lista "${list.name}" y sus materiales?`)) return;
-
-  try {
-    await deleteMaterialList(list.id);
-    customMaterialLists.value = customMaterialLists.value.filter((item) => item.id !== list.id);
-    if (newMaterialType.value === list.id) newMaterialType.value = 'gas';
-    showNotification(`Lista "${list.name}" eliminada correctamente.`);
-  } catch (error) {
-    console.error(error);
-    showNotification('Error eliminando la lista.', 'error');
   }
 }
 
@@ -1155,7 +1140,6 @@ function unlockStockPage() {
               <button class="info-button" @click="shownCustomStockLists[list.id] = !shownCustomStockLists[list.id]">
                 {{ shownCustomStockLists[list.id] ? 'Ocultar lista' : 'Mostrar lista' }}
               </button>
-              <button class="danger-button" @click="removeCustomMaterialList(list)">Eliminar lista</button>
             </div>
           </div>
           <p v-if="shownCustomStockLists[list.id] && list.materials.length === 0" class="empty-search-result">
