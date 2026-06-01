@@ -63,6 +63,10 @@ class MaterialListPayload(BaseModel):
     name: str = Field(min_length=1)
 
 
+class CustomMaterialMovePayload(MaterialPayload):
+    target_list_id: str = Field(min_length=1)
+
+
 class ReportDifferencePayload(BaseModel):
     material_id: str | None = None
     material_name: str | None = None
@@ -79,7 +83,7 @@ class ReportDifferencePayload(BaseModel):
 
 class ReportPayload(BaseModel):
     id: str | None = None
-    type: MaterialType
+    type: str = Field(min_length=1)
     user_name: str = Field(min_length=1)
     shift: str = Field(min_length=1)
     differences: list[ReportDifferencePayload] = []
@@ -315,6 +319,42 @@ def update_custom_material(list_id: str, material_id: str, payload: MaterialPayl
                 existing=payload.existing,
                 counted=payload.counted,
                 description=payload.description,
+                updated_at=func.now(),
+            )
+        )
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Material not found")
+        row = connection.execute(select(custom_materials).where(custom_materials.c.id == material_id)).first()
+    return normalize_material(row)
+
+
+@app.put("/api/material-lists/{list_id}/materials/{material_id}/list")
+def move_custom_material(list_id: str, material_id: str, payload: CustomMaterialMovePayload) -> dict:
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Material name is required")
+
+    with get_engine().begin() as connection:
+        if not connection.execute(
+            select(material_lists.c.id).where(material_lists.c.id == payload.target_list_id)
+        ).first():
+            raise HTTPException(status_code=404, detail="Target list not found")
+
+        next_order = connection.execute(
+            select(func.coalesce(func.max(custom_materials.c.order_index), -1) + 1)
+            .where(custom_materials.c.list_id == payload.target_list_id)
+        ).scalar_one()
+        result = connection.execute(
+            update(custom_materials)
+            .where(custom_materials.c.id == material_id)
+            .where(custom_materials.c.list_id == list_id)
+            .values(
+                list_id=payload.target_list_id,
+                name=name,
+                existing=payload.existing,
+                counted=payload.counted,
+                description=payload.description,
+                order_index=next_order,
                 updated_at=func.now(),
             )
         )

@@ -15,6 +15,7 @@ import {
   getMaterialsGas,
   getMaterialsVapor,
   getReports,
+  moveCustomMaterial,
   summarizeGasInventory,
   updateMaterialOrder,
   updateReport,
@@ -24,8 +25,9 @@ import {
   updateMaterialVapor,
 } from './api';
 
-type View = 'home' | 'select' | 'gas' | 'vapor' | 'stock' | 'reports';
+type View = 'home' | 'select' | 'gas' | 'vapor' | 'custom-count' | 'stock' | 'reports';
 type MaterialType = 'gas' | 'vapor';
+type CountTarget = MaterialType | string;
 
 interface Material {
   id: string;
@@ -50,7 +52,7 @@ interface ReportDifference extends Material {
 
 interface Report {
   id: string;
-  type: MaterialType;
+  type: string;
   user_name: string;
   shift: string;
   timestamp: string;
@@ -73,11 +75,12 @@ const newMaterialName = ref('');
 const newMaterialExisting = ref(0);
 const newMaterialDescription = ref('');
 const newMaterialType = ref('gas');
+const activeCustomListId = ref<string | null>(null);
 const showNewListForm = ref(false);
 const newListName = ref('');
 const editingId = ref<string | null>(null);
 const editingType = ref<MaterialType | null>(null);
-const editingTargetType = ref<MaterialType>('gas');
+const editingTargetType = ref<CountTarget>('gas');
 const editingName = ref('');
 const editingExisting = ref(0);
 const editingDescription = ref('');
@@ -109,8 +112,25 @@ const reportTimeZone = 'America/Mexico_City';
 const draggingMaterial = ref<{ id: string; type: MaterialType } | null>(null);
 const draggingCustomMaterial = ref<{ id: string; listId: string } | null>(null);
 
-const currentType = computed<MaterialType>(() => (view.value === 'gas' ? 'gas' : 'vapor'));
-const currentMaterials = computed(() => (currentType.value === 'gas' ? materialsGas.value : materialsVapor.value));
+const activeCustomList = computed(() =>
+  customMaterialLists.value.find((list) => list.id === activeCustomListId.value) || null
+);
+const currentType = computed<CountTarget>(() => {
+  if (view.value === 'gas') return 'gas';
+  if (view.value === 'vapor') return 'vapor';
+  return activeCustomListId.value || 'gas';
+});
+const currentMaterials = computed(() => {
+  if (currentType.value === 'gas') return materialsGas.value;
+  if (currentType.value === 'vapor') return materialsVapor.value;
+  return activeCustomList.value?.materials || [];
+});
+const currentCountTitle = computed(() => getReportTypeLabel(currentType.value));
+const materialListOptions = computed(() => [
+  { id: 'gas', name: 'Gas' },
+  { id: 'vapor', name: 'Vapor' },
+  ...customMaterialLists.value.map((list) => ({ id: list.id, name: list.name })),
+]);
 const differences = computed(() =>
   currentMaterials.value.map((material) => ({
     ...material,
@@ -201,6 +221,9 @@ function setView(nextView: View) {
   view.value = nextView;
   showDifferences.value = false;
   countAdditions.value = {};
+  if (nextView !== 'custom-count') {
+    activeCustomListId.value = null;
+  }
   if (nextView !== 'gas') {
     gasSummary.value = '';
     gasSummaryError.value = '';
@@ -219,10 +242,34 @@ function setView(nextView: View) {
   }
 }
 
-function handleCountedChange(id: string, counted: number, type: MaterialType) {
-  const collection = type === 'gas' ? materialsGas : materialsVapor;
-  collection.value = collection.value.map((material) =>
-    material.id === id ? { ...material, counted } : material
+function startCustomCount(listId: string) {
+  activeCustomListId.value = listId;
+  setView('custom-count');
+}
+
+function updateCustomListMaterials(listId: string, updater: (materials: Material[]) => Material[]) {
+  customMaterialLists.value = customMaterialLists.value.map((list) =>
+    list.id === listId ? { ...list, materials: updater(list.materials) } : list
+  );
+}
+
+function getReportTypeLabel(type: string) {
+  if (type === 'gas') return 'Gas';
+  if (type === 'vapor') return 'Vapor';
+  return customMaterialLists.value.find((list) => list.id === type)?.name || 'Lista personalizada';
+}
+
+function handleCountedChange(id: string, counted: number, type: CountTarget) {
+  if (type === 'gas' || type === 'vapor') {
+    const collection = type === 'gas' ? materialsGas : materialsVapor;
+    collection.value = collection.value.map((material) =>
+      material.id === id ? { ...material, counted } : material
+    );
+    return;
+  }
+
+  updateCustomListMaterials(type, (materials) =>
+    materials.map((material) => (material.id === id ? { ...material, counted } : material))
   );
 }
 
@@ -356,9 +403,15 @@ function handleDifferenceCountInput(event: Event, materialId: string) {
   handleCountedChange(materialId, Number(input.value), currentType.value);
 }
 
-function resetCountingPage(type: MaterialType) {
-  const collection = type === 'gas' ? materialsGas : materialsVapor;
-  collection.value = collection.value.map((material) => ({ ...material, counted: 0 }));
+function resetCountingPage(type: CountTarget) {
+  if (type === 'gas' || type === 'vapor') {
+    const collection = type === 'gas' ? materialsGas : materialsVapor;
+    collection.value = collection.value.map((material) => ({ ...material, counted: 0 }));
+  } else {
+    updateCustomListMaterials(type, (materials) =>
+      materials.map((material) => ({ ...material, counted: 0 }))
+    );
+  }
   showDifferences.value = false;
   countAdditions.value = {};
   reportUserName.value = '';
@@ -478,6 +531,7 @@ async function saveEdit() {
   const collection = editingType.value === 'gas' ? materialsGas : materialsVapor;
   const currentMaterial = collection.value.find((material) => material.id === editingId.value);
   const payload = {
+    id: editingId.value,
     name: editingName.value.trim(),
     existing: editingExisting.value,
     counted: currentMaterial?.counted || 0,
@@ -485,15 +539,7 @@ async function saveEdit() {
   };
 
   try {
-    if (editingTargetType.value !== editingType.value) {
-      const movedMaterial = await changeMaterialType(editingType.value, editingId.value, {
-        ...payload,
-        type: editingTargetType.value,
-      });
-      collection.value = collection.value.filter((material) => material.id !== editingId.value);
-      const targetCollection = editingTargetType.value === 'gas' ? materialsGas : materialsVapor;
-      targetCollection.value = [...targetCollection.value, movedMaterial];
-    } else {
+    if (editingTargetType.value === editingType.value) {
       const updatedMaterial =
         editingType.value === 'gas'
           ? await updateMaterialGas(editingId.value, payload)
@@ -502,6 +548,28 @@ async function saveEdit() {
       collection.value = collection.value.map((material) =>
         material.id === editingId.value ? updatedMaterial : material
       );
+    } else if (editingTargetType.value === 'gas' || editingTargetType.value === 'vapor') {
+      const movedMaterial = await changeMaterialType(editingType.value, editingId.value, {
+        ...payload,
+        type: editingTargetType.value,
+      });
+      collection.value = collection.value.filter((material) => material.id !== editingId.value);
+      const targetCollection = editingTargetType.value === 'gas' ? materialsGas : materialsVapor;
+      targetCollection.value = [...targetCollection.value, movedMaterial];
+    } else {
+      const movedMaterial = await addCustomMaterial(editingTargetType.value, payload);
+      if (editingType.value === 'gas') {
+        await deleteMaterialGas(editingId.value);
+      } else {
+        await deleteMaterialVapor(editingId.value);
+      }
+      collection.value = collection.value.filter((material) => material.id !== editingId.value);
+      customMaterialLists.value = customMaterialLists.value.map((list) =>
+        list.id === editingTargetType.value
+          ? { ...list, materials: [...list.materials, movedMaterial] }
+          : list
+      );
+      shownCustomStockLists.value = { ...shownCustomStockLists.value, [editingTargetType.value]: true };
     }
     showNotification(`Material "${payload.name}" actualizado correctamente.`);
     cancelEdit();
@@ -515,6 +583,7 @@ function startCustomMaterialEditing(material: Material, listId: string) {
   editingId.value = material.id;
   editingType.value = null;
   editingCustomListId.value = listId;
+  editingTargetType.value = listId;
   editingName.value = material.name;
   editingExisting.value = material.existing;
   editingDescription.value = material.description;
@@ -525,6 +594,7 @@ async function saveCustomMaterialEdit(listId: string) {
   const list = customMaterialLists.value.find((item) => item.id === listId);
   const currentMaterial = list?.materials.find((material) => material.id === editingId.value);
   const payload = {
+    id: editingId.value,
     name: editingName.value.trim(),
     existing: editingExisting.value,
     counted: currentMaterial?.counted || 0,
@@ -532,17 +602,49 @@ async function saveCustomMaterialEdit(listId: string) {
   };
 
   try {
-    const updatedMaterial = await updateCustomMaterial(listId, editingId.value, payload);
-    customMaterialLists.value = customMaterialLists.value.map((item) =>
-      item.id === listId
-        ? {
-            ...item,
-            materials: item.materials.map((material) =>
-              material.id === editingId.value ? updatedMaterial : material
-            ),
-          }
-        : item
-    );
+    if (editingTargetType.value === listId) {
+      const updatedMaterial = await updateCustomMaterial(listId, editingId.value, payload);
+      customMaterialLists.value = customMaterialLists.value.map((item) =>
+        item.id === listId
+          ? {
+              ...item,
+              materials: item.materials.map((material) =>
+                material.id === editingId.value ? updatedMaterial : material
+              ),
+            }
+          : item
+      );
+    } else if (editingTargetType.value === 'gas' || editingTargetType.value === 'vapor') {
+      const movedMaterial =
+        editingTargetType.value === 'gas'
+          ? await addMaterialGas(payload)
+          : await addMaterialVapor(payload);
+      await deleteCustomMaterial(listId, editingId.value);
+      customMaterialLists.value = customMaterialLists.value.map((item) =>
+        item.id === listId
+          ? { ...item, materials: item.materials.filter((material) => material.id !== editingId.value) }
+          : item
+      );
+      const targetCollection = editingTargetType.value === 'gas' ? materialsGas : materialsVapor;
+      targetCollection.value = [...targetCollection.value, movedMaterial];
+    } else {
+      const movedMaterial = await moveCustomMaterial(
+        listId,
+        editingId.value,
+        editingTargetType.value,
+        payload
+      );
+      customMaterialLists.value = customMaterialLists.value.map((item) => {
+        if (item.id === listId) {
+          return { ...item, materials: item.materials.filter((material) => material.id !== editingId.value) };
+        }
+        if (item.id === editingTargetType.value) {
+          return { ...item, materials: [...item.materials, movedMaterial] };
+        }
+        return item;
+      });
+      shownCustomStockLists.value = { ...shownCustomStockLists.value, [editingTargetType.value]: true };
+    }
     showNotification(`Material "${payload.name}" actualizado correctamente.`);
     cancelEdit();
   } catch (error) {
@@ -566,7 +668,7 @@ async function removeCustomMaterial(listId: string, material: Material) {
   }
 }
 
-async function saveReport(type: MaterialType, reportDifferences: ReportDifference[]) {
+async function saveReport(type: CountTarget, reportDifferences: ReportDifference[]) {
   const userName = reportUserName.value.trim();
   const shift = reportShift.value.trim();
   if (!userName || !shift) {
@@ -596,7 +698,7 @@ async function saveReport(type: MaterialType, reportDifferences: ReportDifferenc
     highlightedReportId.value = newReport.id;
     selectedReportId.value = newReport.id;
     view.value = 'reports';
-    showNotification(`Reporte de ${type === 'gas' ? 'Gas' : 'Vapor'} guardado correctamente.`);
+    showNotification(`Reporte de ${getReportTypeLabel(type)} guardado correctamente.`);
   } catch (error) {
     console.error(error);
     showNotification('Error guardando reporte', 'error');
@@ -686,11 +788,22 @@ async function saveReportEdit(report: Report) {
 }
 
 async function saveStockUpdate(report: Report) {
-  const collection = report.type === 'gas' ? materialsGas : materialsVapor;
+  const isSystemList = report.type === 'gas' || report.type === 'vapor';
+  const collection =
+    report.type === 'gas'
+      ? materialsGas
+      : report.type === 'vapor'
+        ? materialsVapor
+        : null;
+  const customList = isSystemList
+    ? null
+    : customMaterialLists.value.find((list) => list.id === report.type) || null;
 
   try {
     for (const difference of report.differences) {
-      const material = collection.value.find((item) => item.id === difference.id);
+      const material = isSystemList
+        ? collection?.value.find((item) => item.id === difference.id)
+        : customList?.materials.find((item) => item.id === difference.id);
       if (!material) continue;
       const payload = {
         name: material.name,
@@ -700,29 +813,40 @@ async function saveStockUpdate(report: Report) {
       };
       if (report.type === 'gas') {
         await updateMaterialGas(material.id, payload);
-      } else {
+      } else if (report.type === 'vapor') {
         await updateMaterialVapor(material.id, payload);
+      } else {
+        await updateCustomMaterial(report.type, material.id, payload);
       }
     }
 
-    collection.value = collection.value.map((material) => {
-      const reportDiff = report.differences.find((diff) => diff.id === material.id);
-      return reportDiff ? { ...material, existing: reportDiff.counted, counted: 0 } : material;
-    });
+    if (isSystemList && collection) {
+      collection.value = collection.value.map((material) => {
+        const reportDiff = report.differences.find((diff) => diff.id === material.id);
+        return reportDiff ? { ...material, existing: reportDiff.counted, counted: 0 } : material;
+      });
+    } else {
+      updateCustomListMaterials(report.type, (materials) =>
+        materials.map((material) => {
+          const reportDiff = report.differences.find((diff) => diff.id === material.id);
+          return reportDiff ? { ...material, existing: reportDiff.counted, counted: 0 } : material;
+        })
+      );
+    }
     updatedReports.value = [...updatedReports.value, report.id];
-    showNotification(`Stock de ${report.type === 'gas' ? 'Gas' : 'Vapor'} actualizado correctamente.`);
+    showNotification(`Stock de ${getReportTypeLabel(report.type)} actualizado correctamente.`);
   } catch (error) {
     console.error(error);
     showNotification('Error actualizando stock', 'error');
   }
 }
 
-function handleCountInput(event: Event, materialId: string, type: MaterialType) {
+function handleCountInput(event: Event, materialId: string, type: CountTarget) {
   const input = event.target as HTMLInputElement;
   handleCountedChange(materialId, Number(input.value), type);
 }
 
-function markMaterialComplete(material: Material, type: MaterialType) {
+function markMaterialComplete(material: Material, type: CountTarget) {
   handleCountedChange(material.id, material.existing, type);
 }
 
@@ -867,6 +991,13 @@ function unlockStockPage() {
       <h1>Seleccionar Tipo de Conteo</h1>
       <button @click="setView('gas')">Contar Gas</button>
       <button @click="setView('vapor')">Contar Vapor</button>
+      <button
+        v-for="list in customMaterialLists"
+        :key="list.id"
+        @click="startCustomCount(list.id)"
+      >
+        Contar {{ list.name }}
+      </button>
       <button @click="setView('home')">Volver</button>
     </section>
 
@@ -887,10 +1018,8 @@ function unlockStockPage() {
       <div v-else class="section-block">
         <h2>Agregar Nuevo Material</h2>
         <select v-model="newMaterialType">
-          <option value="gas">Gas</option>
-          <option value="vapor">Vapor</option>
-          <option v-for="list in customMaterialLists" :key="list.id" :value="list.id">
-            {{ list.name }}
+          <option v-for="option in materialListOptions" :key="option.id" :value="option.id">
+            {{ option.name }}
           </option>
         </select>
         <input v-model="newMaterialName" type="text" placeholder="Nombre del material" />
@@ -951,8 +1080,9 @@ function unlockStockPage() {
           >
             <div v-if="editingId === material.id && editingType === 'gas'" class="edit-form">
               <select v-model="editingTargetType">
-                <option value="gas">Gas</option>
-                <option value="vapor">Vapor</option>
+                <option v-for="option in materialListOptions" :key="option.id" :value="option.id">
+                  {{ option.name }}
+                </option>
               </select>
               <input v-model="editingName" type="text" placeholder="Nombre" />
               <input v-model="editingDescription" type="text" placeholder="Descripcion" />
@@ -993,8 +1123,9 @@ function unlockStockPage() {
           >
             <div v-if="editingId === material.id && editingType === 'vapor'" class="edit-form">
               <select v-model="editingTargetType">
-                <option value="gas">Gas</option>
-                <option value="vapor">Vapor</option>
+                <option v-for="option in materialListOptions" :key="option.id" :value="option.id">
+                  {{ option.name }}
+                </option>
               </select>
               <input v-model="editingName" type="text" placeholder="Nombre" />
               <input v-model="editingDescription" type="text" placeholder="Descripcion" />
@@ -1012,46 +1143,57 @@ function unlockStockPage() {
         </ul>
       </div>
 
-      <div v-for="list in filteredCustomMaterialLists" :key="list.id" class="section-block">
-        <div class="stock-list-header">
-          <h2>{{ list.name }}</h2>
-          <div class="stock-list-actions">
-            <button class="info-button" @click="shownCustomStockLists[list.id] = !shownCustomStockLists[list.id]">
-              {{ shownCustomStockLists[list.id] ? 'Ocultar lista' : 'Mostrar lista' }}
-            </button>
-            <button class="danger-button" @click="removeCustomMaterialList(list)">Eliminar lista</button>
+      <template v-if="stockAuthenticated">
+        <div
+          v-for="list in filteredCustomMaterialLists"
+          :key="list.id"
+          class="section-block"
+        >
+          <div class="stock-list-header">
+            <h2>{{ list.name }}</h2>
+            <div class="stock-list-actions">
+              <button class="info-button" @click="shownCustomStockLists[list.id] = !shownCustomStockLists[list.id]">
+                {{ shownCustomStockLists[list.id] ? 'Ocultar lista' : 'Mostrar lista' }}
+              </button>
+              <button class="danger-button" @click="removeCustomMaterialList(list)">Eliminar lista</button>
+            </div>
           </div>
+          <p v-if="shownCustomStockLists[list.id] && list.materials.length === 0" class="empty-search-result">
+            No se encontraron materiales en esta lista.
+          </p>
+          <ul v-if="shownCustomStockLists[list.id]">
+            <li
+              v-for="material in list.materials"
+              :key="material.id"
+              class="draggable-material"
+              draggable="true"
+              @dragstart="handleCustomMaterialDragStart(material, list.id)"
+              @dragend="handleCustomMaterialDragEnd"
+              @dragover.prevent
+              @drop="handleCustomMaterialDrop(material, list.id)"
+            >
+              <div v-if="editingId === material.id && editingCustomListId === list.id" class="edit-form">
+                <select v-model="editingTargetType">
+                  <option v-for="option in materialListOptions" :key="option.id" :value="option.id">
+                    {{ option.name }}
+                  </option>
+                </select>
+                <input v-model="editingName" type="text" placeholder="Nombre" />
+                <input v-model="editingDescription" type="text" placeholder="Descripcion" />
+                <input v-model.number="editingExisting" type="number" placeholder="Cantidad en stock" />
+                <button @click="saveCustomMaterialEdit(list.id)">Guardar</button>
+                <button @click="cancelEdit">Cancelar</button>
+              </div>
+              <div v-else class="material-item">
+                <span><strong>{{ material.name }}</strong></span>
+                <span>Stock: {{ material.existing }}</span>
+                <button @click="startCustomMaterialEditing(material, list.id)">Editar</button>
+                <button class="danger-button" @click="removeCustomMaterial(list.id, material)">Borrar</button>
+              </div>
+            </li>
+          </ul>
         </div>
-        <p v-if="shownCustomStockLists[list.id] && list.materials.length === 0" class="empty-search-result">
-          No se encontraron materiales en esta lista.
-        </p>
-        <ul v-if="shownCustomStockLists[list.id]">
-          <li
-            v-for="material in list.materials"
-            :key="material.id"
-            class="draggable-material"
-            draggable="true"
-            @dragstart="handleCustomMaterialDragStart(material, list.id)"
-            @dragend="handleCustomMaterialDragEnd"
-            @dragover.prevent
-            @drop="handleCustomMaterialDrop(material, list.id)"
-          >
-            <div v-if="editingId === material.id && editingCustomListId === list.id" class="edit-form">
-              <input v-model="editingName" type="text" placeholder="Nombre" />
-              <input v-model="editingDescription" type="text" placeholder="Descripcion" />
-              <input v-model.number="editingExisting" type="number" placeholder="Cantidad en stock" />
-              <button @click="saveCustomMaterialEdit(list.id)">Guardar</button>
-              <button @click="cancelEdit">Cancelar</button>
-            </div>
-            <div v-else class="material-item">
-              <span><strong>{{ material.name }}</strong></span>
-              <span>Stock: {{ material.existing }}</span>
-              <button @click="startCustomMaterialEditing(material, list.id)">Editar</button>
-              <button class="danger-button" @click="removeCustomMaterial(list.id, material)">Borrar</button>
-            </div>
-          </li>
-        </ul>
-      </div>
+      </template>
     </section>
 
     <section v-else-if="view === 'reports'">
@@ -1079,7 +1221,7 @@ function unlockStockPage() {
           <div v-if="highlightedReportId === report.id" class="current-report-label">
             Reporte guardado actualmente
           </div>
-          <h2>{{ report.type === 'gas' ? 'Conteo de Gas' : 'Conteo de Vapor' }}</h2>
+          <h2>Conteo de {{ getReportTypeLabel(report.type) }}</h2>
           <div class="report-card-meta">
             <span><strong>Fecha:</strong> {{ formatReportTimestamp(report.timestamp) }}</span>
             <span><strong>Usuario:</strong> {{ report.user_name || 'Sin usuario' }}</span>
@@ -1110,7 +1252,7 @@ function unlockStockPage() {
             Reporte guardado actualmente
           </div>
           <h2>
-            {{ selectedReport.type === 'gas' ? 'Conteo de Gas' : 'Conteo de Vapor' }}
+            Conteo de {{ getReportTypeLabel(selectedReport.type) }}
             - {{ formatReportTimestamp(selectedReport.timestamp) }}
           </h2>
           <div v-if="editingReportId === selectedReport.id" class="report-meta edit-form">
@@ -1277,7 +1419,7 @@ function unlockStockPage() {
     </section>
 
     <section v-else>
-      <h1>Contar {{ currentType === 'gas' ? 'Gas' : 'Vapor' }}</h1>
+      <h1>Contar {{ currentCountTitle }}</h1>
       <button @click="setView('select')">Volver</button>
 
       <div v-if="currentType === 'gas'" class="ai-summary-panel">

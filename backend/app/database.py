@@ -3,7 +3,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import (
-    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
@@ -81,7 +80,6 @@ reports = Table(
     Column("shift", String, nullable=False, server_default=""),
     Column("timestamp", String, nullable=False, server_default=func.now()),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    CheckConstraint("type IN ('gas', 'vapor')", name="reports_type_check"),
 )
 
 report_differences = Table(
@@ -148,6 +146,7 @@ def migrate_existing_tables() -> None:
                 connection.execute(
                     text("ALTER TABLE reports ADD COLUMN shift VARCHAR NOT NULL DEFAULT ''")
                 )
+            remove_reports_type_check(connection)
 
         for table_name in ("materials_gas", "materials_vapor"):
             if table_name in inspector.get_table_names():
@@ -188,6 +187,49 @@ def migrate_existing_tables() -> None:
                         "ADD COLUMN process_count INTEGER NOT NULL DEFAULT 0"
                     )
                 )
+
+
+def remove_reports_type_check(connection) -> None:
+    if engine.dialect.name == "postgresql":
+        connection.execute(text("ALTER TABLE reports DROP CONSTRAINT IF EXISTS reports_type_check"))
+        return
+
+    if engine.dialect.name != "sqlite":
+        return
+
+    create_sql = connection.execute(
+        text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'reports'")
+    ).scalar()
+    if not create_sql or "reports_type_check" not in create_sql:
+        return
+
+    connection.execute(text("PRAGMA foreign_keys=OFF"))
+    connection.execute(
+        text(
+            """
+            CREATE TABLE reports_new (
+                id VARCHAR NOT NULL,
+                type VARCHAR NOT NULL,
+                user_name VARCHAR NOT NULL DEFAULT '',
+                shift VARCHAR NOT NULL DEFAULT '',
+                timestamp VARCHAR NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id)
+            )
+            """
+        )
+    )
+    connection.execute(
+        text(
+            """
+            INSERT INTO reports_new (id, type, user_name, shift, timestamp, created_at)
+            SELECT id, type, user_name, shift, timestamp, created_at FROM reports
+            """
+        )
+    )
+    connection.execute(text("DROP TABLE reports"))
+    connection.execute(text("ALTER TABLE reports_new RENAME TO reports"))
+    connection.execute(text("PRAGMA foreign_keys=ON"))
 
 
 def seed_data() -> None:

@@ -1,6 +1,7 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 export interface MaterialPayload {
+  id?: string;
   name: string;
   existing: number;
   counted?: number;
@@ -98,6 +99,17 @@ export const updateCustomMaterial = (listId: string, id: string, material: Mater
   request(`/material-lists/${listId}/materials/${id}`, {
     method: 'PUT',
     body: JSON.stringify(material),
+  });
+
+export const moveCustomMaterial = (
+  listId: string,
+  id: string,
+  targetListId: string,
+  material: MaterialPayload
+) =>
+  request(`/material-lists/${listId}/materials/${id}/list`, {
+    method: 'PUT',
+    body: JSON.stringify({ ...material, target_list_id: targetListId }),
   });
 
 export const deleteCustomMaterial = (listId: string, id: string) =>
