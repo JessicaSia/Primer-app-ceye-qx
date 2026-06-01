@@ -15,7 +15,6 @@ import {
   getMaterialsVapor,
   getReports,
   moveCustomMaterial,
-  summarizeGasInventory,
   updateMaterialOrder,
   updateReport,
   updateCustomMaterial,
@@ -104,9 +103,6 @@ const showStockGasMaterials = ref(false);
 const showStockVaporMaterials = ref(false);
 const shownCustomStockLists = ref<Record<string, boolean>>({});
 const editingCustomListId = ref<string | null>(null);
-const gasSummary = ref('');
-const gasSummaryLoading = ref(false);
-const gasSummaryError = ref('');
 const reportTimeZone = 'America/Mexico_City';
 const draggingMaterial = ref<{ id: string; type: MaterialType } | null>(null);
 const draggingCustomMaterial = ref<{ id: string; listId: string } | null>(null);
@@ -216,16 +212,16 @@ function showNotification(message: string, type: 'success' | 'error' = 'success'
   }, 3000);
 }
 
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
 function setView(nextView: View) {
   view.value = nextView;
   showDifferences.value = false;
   countAdditions.value = {};
   if (nextView !== 'custom-count') {
     activeCustomListId.value = null;
-  }
-  if (nextView !== 'gas') {
-    gasSummary.value = '';
-    gasSummaryError.value = '';
   }
   if (nextView !== 'reports') {
     showReportSearch.value = false;
@@ -380,21 +376,6 @@ function getReportDateKey(timestamp: string) {
   const day = parts.find((part) => part.type === 'day')?.value;
 
   return year && month && day ? `${year}-${month}-${day}` : timestamp.slice(0, 10);
-}
-
-async function generateGasSummary() {
-  gasSummaryLoading.value = true;
-  gasSummaryError.value = '';
-
-  try {
-    const response = await summarizeGasInventory(materialsGas.value);
-    gasSummary.value = response.summary;
-  } catch (error) {
-    console.error(error);
-    gasSummaryError.value = error instanceof Error ? error.message : 'Error generando resumen AI';
-  } finally {
-    gasSummaryLoading.value = false;
-  }
 }
 
 function handleDifferenceCountInput(event: Event, materialId: string) {
@@ -560,7 +541,7 @@ async function saveEdit() {
     cancelEdit();
   } catch (error) {
     console.error(error);
-    showNotification('Error actualizando material', 'error');
+    showNotification(getErrorMessage(error, 'Error actualizando material'), 'error');
   }
 }
 
@@ -634,7 +615,7 @@ async function saveCustomMaterialEdit(listId: string) {
     cancelEdit();
   } catch (error) {
     console.error(error);
-    showNotification('Error actualizando material', 'error');
+    showNotification(getErrorMessage(error, 'Error actualizando material'), 'error');
   }
 }
 
@@ -1405,18 +1386,6 @@ function unlockStockPage() {
     <section v-else>
       <h1>Contar {{ currentCountTitle }}</h1>
       <button @click="setView('select')">Volver</button>
-
-      <div v-if="currentType === 'gas'" class="ai-summary-panel">
-        <div class="ai-summary-header">
-          <h2>Resumen AI de Gas</h2>
-          <button class="info-button" :disabled="gasSummaryLoading" @click="generateGasSummary">
-            {{ gasSummaryLoading ? 'Generando...' : 'Generar Resumen AI' }}
-          </button>
-        </div>
-        <p v-if="gasSummaryError" class="ai-summary-error">{{ gasSummaryError }}</p>
-        <p v-else-if="gasSummary" class="ai-summary-text">{{ gasSummary }}</p>
-        <p v-else class="ai-summary-muted">Genera un resumen rapido del conteo actual de gas.</p>
-      </div>
 
       <ul>
         <li v-for="material in currentMaterials" :key="material.id">

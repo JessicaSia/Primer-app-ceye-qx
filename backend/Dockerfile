@@ -5,7 +5,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY ai_api.py .
 COPY app ./app
 
 ENV SQLITE_DB_PATH=/data/inventory.db

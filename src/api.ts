@@ -1,4 +1,8 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
+const isLocalBrowser =
+  typeof window !== 'undefined' &&
+  ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const API_URL = configuredApiUrl || (isLocalBrowser ? 'http://localhost:8000/api' : '');
 
 export interface MaterialPayload {
   id?: string;
@@ -17,10 +21,23 @@ export interface MaterialList {
 }
 
 async function request<T = any>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) },
-    ...options,
-  });
+  if (!API_URL) {
+    throw new Error(
+      'Falta configurar VITE_API_URL en Vercel con la URL del backend, por ejemplo https://tu-backend.onrender.com/api'
+    );
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL.replace(/\/$/, '')}${path}`, {
+      headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) },
+      ...options,
+    });
+  } catch (error) {
+    throw new Error(
+      `No se pudo conectar con el backend en ${API_URL}. Revisa VITE_API_URL y CORS/FRONTEND_ORIGINS.`
+    );
+  }
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
@@ -140,10 +157,4 @@ export const updateReport = (id: string, report: ReportPayload) =>
   request(`/reports/${id}`, {
     method: 'PUT',
     body: JSON.stringify(report),
-  });
-
-export const summarizeGasInventory = (materials: MaterialPayload[]) =>
-  request<{ summary: string }>('/ai/gas-summary', {
-    method: 'POST',
-    body: JSON.stringify({ materials }),
   });

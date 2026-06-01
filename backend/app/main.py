@@ -8,7 +8,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, desc, func, insert, select, update
 
-from ai_api import summarize_gas_inventory
 from .database import (
     custom_materials,
     get_database_url,
@@ -87,21 +86,6 @@ class ReportPayload(BaseModel):
     user_name: str = Field(min_length=1)
     shift: str = Field(min_length=1)
     differences: list[ReportDifferencePayload] = []
-
-
-class InventorySummaryMaterialPayload(BaseModel):
-    id: str | None = None
-    name: str = Field(min_length=1)
-    existing: int = 0
-    counted: int = 0
-    description: str = ""
-    room_count: int = 0
-    process_count: int = 0
-    difference: int | None = None
-
-
-class InventorySummaryPayload(BaseModel):
-    materials: list[InventorySummaryMaterialPayload]
 
 
 @app.on_event("startup")
@@ -375,14 +359,6 @@ def delete_custom_material(list_id: str, material_id: str) -> dict:
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Material not found")
     return {"message": "Deleted", "id": material_id}
-
-
-@app.post("/api/ai/gas-summary")
-def create_gas_summary(payload: InventorySummaryPayload) -> dict:
-    try:
-        return {"summary": summarize_gas_inventory([material.model_dump() for material in payload.materials])}
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.post("/api/materials/{material_type}", status_code=201)
