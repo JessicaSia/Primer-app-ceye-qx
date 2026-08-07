@@ -218,6 +218,32 @@ const reportChartData = computed(() => {
     percent: Math.max(6, Math.round((item.value / maxValue) * 100)),
   }));
 });
+const reportPieData = computed(() => {
+  const total = reportChartData.value.reduce((sum, item) => sum + item.value, 0);
+  return reportChartData.value.map((item) => ({
+    ...item,
+    share: total > 0 ? Math.round((item.value / total) * 100) : 0,
+  }));
+});
+const reportPieStyle = computed(() => {
+  const colors: Record<string, string> = {
+    blue: 'var(--brand-blue)',
+    green: 'var(--brand-green)',
+    'blue-soft': 'var(--brand-blue-dark)',
+  };
+  const total = reportChartData.value.reduce((sum, item) => sum + item.value, 0);
+  if (!total) return { background: 'var(--brand-blue-soft)' };
+
+  let start = 0;
+  const segments = reportChartData.value.map((item) => {
+    const end = start + (item.value / total) * 100;
+    const segment = `${colors[item.color]} ${start}% ${end}%`;
+    start = end;
+    return segment;
+  });
+
+  return { background: `conic-gradient(${segments.join(', ')})` };
+});
 const filteredReports = computed(() => {
   if (!reportSearchDate.value) return reports.value;
   return reports.value.filter((report) => getReportDateKey(report.timestamp) === reportSearchDate.value);
@@ -1051,14 +1077,17 @@ function unlockStockPage() {
 
           <section class="dashboard-panel chart-panel">
             <h2>Reportes por tipo</h2>
-            <div v-if="reportChartData.length" class="bar-chart">
-              <div v-for="item in reportChartData" :key="item.label" class="chart-row">
-                <div class="chart-row-label">
-                  <span>{{ item.label }}</span>
-                  <strong>{{ item.value }}</strong>
-                </div>
-                <div class="chart-track">
-                  <div :class="['chart-bar', item.color]" :style="{ width: `${item.percent}%` }"></div>
+            <div v-if="reportPieData.length" class="pie-chart-layout">
+              <div class="pie-chart" :style="reportPieStyle">
+                <span>{{ reports.length }}</span>
+              </div>
+              <div class="pie-legend">
+                <div v-for="item in reportPieData" :key="item.label" class="pie-legend-item">
+                  <span :class="['legend-dot', item.color]"></span>
+                  <div>
+                    <strong>{{ item.label }}</strong>
+                    <small>{{ item.value }} reportes - {{ item.share }}%</small>
+                  </div>
                 </div>
               </div>
             </div>
