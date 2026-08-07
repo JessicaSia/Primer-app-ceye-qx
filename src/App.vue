@@ -175,6 +175,16 @@ const stockMaterialCount = computed(
     materialsVapor.value.length +
     customMaterialLists.value.reduce((count, list) => count + list.materials.length, 0)
 );
+const customMaterialCount = computed(() =>
+  customMaterialLists.value.reduce((count, list) => count + list.materials.length, 0)
+);
+const latestReport = computed(() => reports.value[0] || null);
+const dashboardStats = computed(() => [
+  { label: 'Materiales', value: stockMaterialCount.value, detail: 'en inventario' },
+  { label: 'Gas', value: materialsGas.value.length, detail: 'materiales registrados' },
+  { label: 'Vapor', value: materialsVapor.value.length, detail: 'materiales registrados' },
+  { label: 'Reportes', value: reports.value.length, detail: 'conteos guardados' },
+]);
 const filteredReports = computed(() => {
   if (!reportSearchDate.value) return reports.value;
   return reports.value.filter((report) => getReportDateKey(report.timestamp) === reportSearchDate.value);
@@ -942,18 +952,97 @@ function unlockStockPage() {
 
 <template>
   <main>
-    <div v-if="notification" :class="['notification', notification.type]">
-      {{ notification.message }}
-    </div>
+    <aside class="sidebar no-print">
+      <div class="sidebar-brand">
+        <span class="brand-mark">CQ</span>
+        <div>
+          <strong>Ceye Qx</strong>
+          <span>Inventario</span>
+        </div>
+      </div>
+      <nav class="sidebar-nav" aria-label="Navegacion principal">
+        <button :class="{ active: view === 'home' }" @click="setView('home')">Inicio</button>
+        <button :class="{ active: view === 'select' || view === 'gas' || view === 'vapor' || view === 'custom-count' }" @click="setView('select')">
+          Conteo
+        </button>
+        <button :class="{ active: view === 'stock' }" @click="setView('stock')">Stock</button>
+        <button :class="{ active: view === 'reports' }" @click="setView('reports')">Reportes</button>
+      </nav>
+      <div class="sidebar-status">
+        <span>{{ stockMaterialCount }}</span>
+        <small>materiales activos</small>
+      </div>
+    </aside>
 
-    <section v-if="view === 'home'">
-      <h1>App de Inventario - Ceye Quirofano</h1>
-      <button @click="setView('select')">Conteo de Inventario</button>
-      <button class="success-button" @click="setView('stock')">Gestionar Stock de Materiales</button>
-      <button class="warning-button" @click="setView('reports')">Ver Reportes de Conteo</button>
-    </section>
+    <div class="app-shell">
+      <div v-if="notification" :class="['notification', notification.type]">
+        {{ notification.message }}
+      </div>
 
-    <section v-else-if="view === 'select'">
+      <section v-if="view === 'home'" class="dashboard">
+        <div class="dashboard-hero">
+          <div>
+            <span class="eyebrow">Panel principal</span>
+            <h1>Inventario Ceye Quirofano</h1>
+            <p>Resumen operativo de materiales, conteos y reportes guardados.</p>
+          </div>
+          <div class="dashboard-actions">
+            <button @click="setView('select')">Nuevo Conteo</button>
+            <button class="success-button" @click="setView('stock')">Gestionar Stock</button>
+          </div>
+        </div>
+
+        <div class="dashboard-stats">
+          <article v-for="stat in dashboardStats" :key="stat.label" class="stat-card">
+            <span>{{ stat.label }}</span>
+            <strong>{{ stat.value }}</strong>
+            <small>{{ stat.detail }}</small>
+          </article>
+        </div>
+
+        <div class="dashboard-grid">
+          <section class="dashboard-panel">
+            <h2>Accesos rapidos</h2>
+            <div class="quick-actions">
+              <button @click="setView('select')">Conteo de Inventario</button>
+              <button class="success-button" @click="setView('stock')">Gestionar Stock</button>
+              <button class="warning-button" @click="setView('reports')">Ver Reportes</button>
+            </div>
+          </section>
+
+          <section class="dashboard-panel">
+            <h2>Distribucion</h2>
+            <div class="inventory-breakdown">
+              <div>
+                <span>Gas</span>
+                <strong>{{ materialsGas.length }}</strong>
+              </div>
+              <div>
+                <span>Vapor</span>
+                <strong>{{ materialsVapor.length }}</strong>
+              </div>
+              <div>
+                <span>Personalizados</span>
+                <strong>{{ customMaterialCount }}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="dashboard-panel dashboard-panel-wide">
+            <h2>Ultimo reporte</h2>
+            <div v-if="latestReport" class="latest-report">
+              <div>
+                <strong>Conteo de {{ getReportTypeLabel(latestReport.type) }}</strong>
+                <span>{{ formatReportTimestamp(latestReport.timestamp) }}</span>
+              </div>
+              <button class="info-button" @click="setView('reports')">Abrir Reportes</button>
+            </div>
+            <p v-else class="empty-search-result">No hay reportes guardados.</p>
+          </section>
+        </div>
+      </section>
+
+      <section v-else-if="view === 'select'">
       <h1>Seleccionar Tipo de Conteo</h1>
       <button @click="setView('gas')">Contar Gas</button>
       <button @click="setView('vapor')">Contar Vapor</button>
@@ -1470,5 +1559,6 @@ function unlockStockPage() {
         </button>
       </div>
     </section>
+    </div>
   </main>
 </template>
