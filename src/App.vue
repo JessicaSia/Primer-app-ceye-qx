@@ -1386,7 +1386,42 @@ function unlockStockPage() {
         </article>
       </div>
       <div v-else>
-        <button class="no-print" @click="closeSelectedReport">Ver lista de reportes</button>
+        <div class="report-detail-toolbar no-print">
+          <button @click="closeSelectedReport">Ver lista de reportes</button>
+          <div class="report-detail-actions">
+            <button
+              v-if="editingReportId !== selectedReport.id"
+              class="info-button"
+              @click="startReportEdit(selectedReport)"
+            >
+              Editar Reporte
+            </button>
+            <button
+              v-if="editingReportId !== selectedReport.id"
+              class="warning-button"
+              @click="printReport(selectedReport.id)"
+            >
+              Imprimir Reporte
+            </button>
+            <button
+              v-if="editingReportId !== selectedReport.id"
+              class="success-button"
+              @click="saveStockUpdate(selectedReport)"
+            >
+              Guardar Actualizacion de Stock
+            </button>
+            <button
+              v-if="editingReportId === selectedReport.id"
+              class="success-button"
+              @click="saveReportEdit(selectedReport)"
+            >
+              Guardar Cambios del Reporte
+            </button>
+            <button v-if="editingReportId === selectedReport.id" @click="cancelReportEdit">
+              Cancelar
+            </button>
+          </div>
+        </div>
         <article
           :key="selectedReport.id"
           :class="[
@@ -1506,37 +1541,6 @@ function unlockStockPage() {
               </tr>
             </tbody>
           </table>
-          <button
-            v-if="editingReportId !== selectedReport.id"
-            class="info-button no-print"
-            @click="startReportEdit(selectedReport)"
-          >
-            Editar Reporte
-          </button>
-          <button
-            v-if="editingReportId !== selectedReport.id"
-            class="warning-button no-print"
-            @click="printReport(selectedReport.id)"
-          >
-            Imprimir Reporte
-          </button>
-          <button
-            v-if="editingReportId === selectedReport.id"
-            class="success-button no-print"
-            @click="saveReportEdit(selectedReport)"
-          >
-            Guardar Cambios del Reporte
-          </button>
-          <button v-if="editingReportId === selectedReport.id" class="no-print" @click="cancelReportEdit">
-            Cancelar
-          </button>
-          <button
-            v-if="editingReportId !== selectedReport.id"
-            class="success-button no-print"
-            @click="saveStockUpdate(selectedReport)"
-          >
-            Guardar Actualizacion de Stock
-          </button>
 
           <div v-if="updatedReports.includes(selectedReport.id)" class="stock-summary">
             <h3>Actualizacion de Stock Completada</h3>

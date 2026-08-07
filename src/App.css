@@ -908,6 +908,30 @@ table tbody tr:hover {
   margin-bottom: 12px;
 }
 
+.report-detail-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 10px 0 18px;
+}
+
+.report-detail-toolbar > button {
+  flex-shrink: 0;
+  margin-left: 0;
+}
+
+.report-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.report-detail-actions button {
+  margin: 0;
+}
+
 .report-search-panel {
   display: flex;
   align-items: center;
@@ -1111,6 +1135,19 @@ table tbody tr:hover {
   .report-card-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .report-detail-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .report-detail-toolbar > button {
+    align-self: flex-start;
+  }
+
+  .report-detail-actions {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1268,6 +1305,18 @@ table tbody tr:hover {
 
   .report-card-grid {
     grid-template-columns: 1fr;
+  }
+
+  .report-detail-toolbar > button,
+  .report-detail-actions,
+  .report-detail-actions button {
+    width: 100%;
+  }
+
+  .report-detail-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   .report-card-meta {
