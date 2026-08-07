@@ -185,6 +185,39 @@ const dashboardStats = computed(() => [
   { label: 'Vapor', value: materialsVapor.value.length, detail: 'materiales registrados' },
   { label: 'Reportes', value: reports.value.length, detail: 'conteos guardados' },
 ]);
+const inventoryChartData = computed(() => {
+  const values = [
+    { label: 'Gas', value: materialsGas.value.length, color: 'blue' },
+    { label: 'Vapor', value: materialsVapor.value.length, color: 'green' },
+    { label: 'Personalizados', value: customMaterialCount.value, color: 'blue-soft' },
+  ];
+  const maxValue = Math.max(...values.map((item) => item.value), 1);
+
+  return values.map((item) => ({
+    ...item,
+    percent: Math.max(6, Math.round((item.value / maxValue) * 100)),
+  }));
+});
+const reportChartData = computed(() => {
+  const reportCounts = reports.value.reduce<Record<string, number>>((acc, report) => {
+    const label = getReportTypeLabel(report.type);
+    acc[label] = (acc[label] || 0) + 1;
+    return acc;
+  }, {});
+  const values = Object.entries(reportCounts)
+    .map(([label, value], index) => ({
+      label,
+      value,
+      color: index % 2 === 0 ? 'blue' : 'green',
+    }))
+    .slice(0, 6);
+  const maxValue = Math.max(...values.map((item) => item.value), 1);
+
+  return values.map((item) => ({
+    ...item,
+    percent: Math.max(6, Math.round((item.value / maxValue) * 100)),
+  }));
+});
 const filteredReports = computed(() => {
   if (!reportSearchDate.value) return reports.value;
   return reports.value.filter((report) => getReportDateKey(report.timestamp) === reportSearchDate.value);
@@ -998,6 +1031,39 @@ function unlockStockPage() {
             <strong>{{ stat.value }}</strong>
             <small>{{ stat.detail }}</small>
           </article>
+        </div>
+
+        <div class="chart-grid">
+          <section class="dashboard-panel chart-panel">
+            <h2>Materiales por categoria</h2>
+            <div class="bar-chart">
+              <div v-for="item in inventoryChartData" :key="item.label" class="chart-row">
+                <div class="chart-row-label">
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+                <div class="chart-track">
+                  <div :class="['chart-bar', item.color]" :style="{ width: `${item.percent}%` }"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="dashboard-panel chart-panel">
+            <h2>Reportes por tipo</h2>
+            <div v-if="reportChartData.length" class="bar-chart">
+              <div v-for="item in reportChartData" :key="item.label" class="chart-row">
+                <div class="chart-row-label">
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+                <div class="chart-track">
+                  <div :class="['chart-bar', item.color]" :style="{ width: `${item.percent}%` }"></div>
+                </div>
+              </div>
+            </div>
+            <p v-else class="empty-search-result">No hay reportes para graficar.</p>
+          </section>
         </div>
 
         <div class="dashboard-grid">
