@@ -1404,7 +1404,7 @@ function unlockStockPage() {
               Imprimir Reporte
             </button>
             <button
-              v-if="editingReportId !== selectedReport.id"
+              v-if="editingReportId === selectedReport.id"
               class="success-button"
               @click="saveStockUpdate(selectedReport)"
             >
