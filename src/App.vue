@@ -1084,16 +1084,18 @@ function unlockStockPage() {
 
       <section v-else-if="view === 'select'">
       <h1>Seleccionar Tipo de Conteo</h1>
-      <button @click="setView('gas')">Contar Gas</button>
-      <button @click="setView('vapor')">Contar Vapor</button>
-      <button
-        v-for="list in customMaterialLists"
-        :key="list.id"
-        @click="startCustomCount(list.id)"
-      >
-        Contar {{ list.name }}
-      </button>
-      <button @click="setView('home')">Volver</button>
+      <div class="count-selection-actions">
+        <button @click="setView('gas')">Contar Gas</button>
+        <button @click="setView('vapor')">Contar Vapor</button>
+        <button
+          v-for="list in customMaterialLists"
+          :key="list.id"
+          @click="startCustomCount(list.id)"
+        >
+          Contar {{ list.name }}
+        </button>
+        <button @click="setView('home')">Volver</button>
+      </div>
     </section>
 
     <section v-else-if="view === 'stock'">

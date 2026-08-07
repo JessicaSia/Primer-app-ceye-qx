@@ -283,6 +283,49 @@ main > section {
   margin-right: 0;
 }
 
+.count-selection-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  max-width: 980px;
+  margin: 52px auto 0;
+  padding: 8px;
+}
+
+.count-selection-actions button {
+  min-width: 220px;
+  min-height: 58px;
+  margin: 0;
+  padding: 16px 28px;
+  border-radius: 8px;
+  font-size: 20px;
+  box-shadow: 0 16px 34px rgba(6, 174, 196, 0.20);
+  animation: actionButtonIn 0.42s ease-out both;
+}
+
+.count-selection-actions button:hover {
+  box-shadow: 0 20px 44px rgba(6, 174, 196, 0.28);
+  transform: translateY(-3px);
+}
+
+.count-selection-actions button:nth-child(1) {
+  animation-delay: 0.04s;
+}
+
+.count-selection-actions button:nth-child(2) {
+  animation-delay: 0.10s;
+}
+
+.count-selection-actions button:nth-child(3) {
+  animation-delay: 0.16s;
+}
+
+.count-selection-actions button:nth-child(4) {
+  animation-delay: 0.22s;
+}
+
 .inventory-breakdown {
   display: grid;
   gap: 10px;
@@ -523,6 +566,17 @@ main > section {
   to {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+
+@keyframes actionButtonIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -1136,6 +1190,19 @@ table tbody tr:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .count-selection-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+    gap: 14px;
+    max-width: 720px;
+    margin-top: 34px;
+  }
+
+  .count-selection-actions button {
+    width: 100%;
+    min-width: 0;
+  }
+
   .report-detail-toolbar {
     align-items: stretch;
     flex-direction: column;
@@ -1278,6 +1345,19 @@ table tbody tr:hover {
     margin: 0;
     min-height: 42px;
     padding: 11px 8px;
+  }
+
+  .count-selection-actions {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-top: 26px;
+    padding: 0;
+  }
+
+  .count-selection-actions button {
+    min-height: 54px;
+    padding: 14px 20px;
+    font-size: 18px;
   }
 
   .material-item,
