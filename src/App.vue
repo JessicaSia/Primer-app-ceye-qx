@@ -67,7 +67,6 @@ const materialsGas = ref<Material[]>([]);
 const materialsVapor = ref<Material[]>([]);
 const customMaterialLists = ref<CustomMaterialList[]>([]);
 const reports = ref<Report[]>([]);
-const updatedReports = ref<string[]>([]);
 const showDifferences = ref(false);
 const newMaterialName = ref('');
 const newMaterialExisting = ref(0);
@@ -822,60 +821,6 @@ async function saveReportEdit(report: Report) {
   }
 }
 
-async function saveStockUpdate(report: Report) {
-  const isSystemList = report.type === 'gas' || report.type === 'vapor';
-  const collection =
-    report.type === 'gas'
-      ? materialsGas
-      : report.type === 'vapor'
-        ? materialsVapor
-        : null;
-  const customList = isSystemList
-    ? null
-    : customMaterialLists.value.find((list) => list.id === report.type) || null;
-
-  try {
-    for (const difference of report.differences) {
-      const material = isSystemList
-        ? collection?.value.find((item) => item.id === difference.id)
-        : customList?.materials.find((item) => item.id === difference.id);
-      if (!material) continue;
-      const payload = {
-        name: material.name,
-        existing: difference.counted,
-        counted: 0,
-        description: material.description,
-      };
-      if (report.type === 'gas') {
-        await updateMaterialGas(material.id, payload);
-      } else if (report.type === 'vapor') {
-        await updateMaterialVapor(material.id, payload);
-      } else {
-        await updateCustomMaterial(report.type, material.id, payload);
-      }
-    }
-
-    if (isSystemList && collection) {
-      collection.value = collection.value.map((material) => {
-        const reportDiff = report.differences.find((diff) => diff.id === material.id);
-        return reportDiff ? { ...material, existing: reportDiff.counted, counted: 0 } : material;
-      });
-    } else {
-      updateCustomListMaterials(report.type, (materials) =>
-        materials.map((material) => {
-          const reportDiff = report.differences.find((diff) => diff.id === material.id);
-          return reportDiff ? { ...material, existing: reportDiff.counted, counted: 0 } : material;
-        })
-      );
-    }
-    updatedReports.value = [...updatedReports.value, report.id];
-    showNotification(`Stock de ${getReportTypeLabel(report.type)} actualizado correctamente.`);
-  } catch (error) {
-    console.error(error);
-    showNotification('Error actualizando stock', 'error');
-  }
-}
-
 function handleCountInput(event: Event, materialId: string, type: CountTarget) {
   const input = event.target as HTMLInputElement;
   handleCountedChange(materialId, Number(input.value), type);
@@ -1406,13 +1351,6 @@ function unlockStockPage() {
             <button
               v-if="editingReportId === selectedReport.id"
               class="success-button"
-              @click="saveStockUpdate(selectedReport)"
-            >
-              Guardar Actualizacion de Stock
-            </button>
-            <button
-              v-if="editingReportId === selectedReport.id"
-              class="success-button"
               @click="saveReportEdit(selectedReport)"
             >
               Guardar Cambios del Reporte
@@ -1541,32 +1479,6 @@ function unlockStockPage() {
               </tr>
             </tbody>
           </table>
-
-          <div v-if="updatedReports.includes(selectedReport.id)" class="stock-summary">
-            <h3>Actualizacion de Stock Completada</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Material</th>
-                  <th>Stock Anterior</th>
-                  <th>Nuevo Stock</th>
-                  <th>Cambio</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="diff in selectedReport.differences"
-                  :key="diff.id"
-                  :class="{ 'print-hide-no-difference': diff.difference === 0 }"
-                >
-                  <td><strong>{{ diff.name }}</strong></td>
-                  <td>{{ diff.existing }}</td>
-                  <td>{{ diff.counted }}</td>
-                  <td>{{ formatDifference(diff.difference) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
         </article>
       </div>
     </section>
