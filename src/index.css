@@ -1,12 +1,12 @@
 #app {
-  max-width: 1280px;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 32px;
+  padding: 36px 28px 52px;
   box-sizing: border-box;
 }
 
 @media (max-width: 760px) {
   #app {
-    padding: 18px;
+    padding: 18px 14px 34px;
   }
 }

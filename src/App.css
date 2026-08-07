@@ -1,20 +1,37 @@
 :root {
-  color: #1f2933;
-  background: #eef3f7;
+  color: #17202a;
+  background: #f4f7f8;
   font-family: Inter, "Segoe UI", Arial, sans-serif;
   font-size: 16px;
+  line-height: 1.5;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
   background:
-    linear-gradient(180deg, rgba(225, 238, 246, 0.9), rgba(246, 248, 250, 0.95)),
-    #eef3f7;
+    linear-gradient(180deg, rgba(246, 250, 250, 0.96), rgba(239, 246, 244, 0.92)),
+    radial-gradient(circle at top left, rgba(38, 166, 154, 0.10), transparent 34%),
+    #f4f7f8;
 }
 
 main {
-  color: #24313f;
+  color: #17202a;
+}
+
+main > section {
+  animation: pageIn 0.24s ease-out;
+}
+
+@keyframes pageIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .notification {
@@ -24,21 +41,21 @@ main {
   padding: 14px 18px;
   margin-bottom: 22px;
   border-radius: 8px;
-  font-weight: 700;
-  box-shadow: 0 10px 24px rgba(31, 41, 51, 0.12);
+  font-weight: 800;
+  box-shadow: 0 16px 38px rgba(23, 32, 42, 0.13);
   animation: slideIn 0.25s ease-in-out;
 }
 
 .notification.success {
-  background-color: #dff4e7;
+  background-color: #e8f7ef;
   color: #17623a;
-  border: 1px solid #9ed8b7;
+  border: 1px solid #a8ddc1;
 }
 
 .notification.error {
-  background-color: #fde2e2;
+  background-color: #fff0ee;
   color: #9b1c1c;
-  border: 1px solid #f7b5b5;
+  border: 1px solid #f2b8b0;
 }
 
 @keyframes slideIn {
@@ -56,21 +73,21 @@ button {
   margin: 6px;
   padding: 12px 18px;
   min-height: 44px;
-  background-color: #2563eb;
-  color: white;
-  border: none;
-  border-radius: 7px;
+  background: #1f6f78;
+  color: #fff;
+  border: 1px solid transparent;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1.1;
-  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.18);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+  box-shadow: 0 10px 22px rgba(31, 111, 120, 0.17);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
 button:hover {
-  background-color: #1d4ed8;
-  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.24);
+  background: #185961;
+  box-shadow: 0 14px 28px rgba(31, 111, 120, 0.24);
   transform: translateY(-1px);
 }
 
@@ -85,41 +102,40 @@ button:disabled {
 }
 
 .success-button {
-  background-color: #1f9d55;
-  box-shadow: 0 6px 14px rgba(31, 157, 85, 0.18);
+  background: #287d52;
+  box-shadow: 0 10px 22px rgba(40, 125, 82, 0.18);
 }
 
 .success-button:hover {
-  background-color: #187a43;
+  background: #206943;
 }
 
 .warning-button {
-  background-color: #f59e0b;
-  color: #1f2933;
-  box-shadow: 0 6px 14px rgba(245, 158, 11, 0.18);
+  background: #c98212;
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(201, 130, 18, 0.18);
 }
 
 .warning-button:hover {
-  background-color: #d97706;
-  color: white;
+  background: #a8670d;
 }
 
 .danger-button {
-  background-color: #dc2626;
-  box-shadow: 0 6px 14px rgba(220, 38, 38, 0.16);
+  background: #b83a32;
+  box-shadow: 0 10px 22px rgba(184, 58, 50, 0.17);
 }
 
 .danger-button:hover {
-  background-color: #b91c1c;
+  background: #963028;
 }
 
 .info-button {
-  background-color: #0e7490;
-  box-shadow: 0 6px 14px rgba(14, 116, 144, 0.17);
+  background: #496275;
+  box-shadow: 0 10px 22px rgba(73, 98, 117, 0.18);
 }
 
 .info-button:hover {
-  background-color: #155e75;
+  background: #394f60;
 }
 
 select,
@@ -131,14 +147,23 @@ input[type="search"] {
   padding: 11px 12px;
   margin: 6px;
   min-height: 42px;
-  border: 1px solid #c9d5df;
-  border-radius: 7px;
+  border: 1px solid #c9d8d6;
+  border-radius: 8px;
   font-size: 15px;
-  color: #1f2933;
+  color: #17202a;
   background-color: #fff;
   box-sizing: border-box;
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+select:hover,
+input[type="text"]:hover,
+input[type="number"]:hover,
+input[type="password"]:hover,
+input[type="date"]:hover,
+input[type="search"]:hover {
+  border-color: #9fb9b5;
 }
 
 select:focus,
@@ -147,8 +172,8 @@ input[type="number"]:focus,
 input[type="password"]:focus,
 input[type="date"]:focus,
 input[type="search"]:focus {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+  border-color: #1f8a84;
+  box-shadow: 0 0 0 3px rgba(31, 138, 132, 0.16);
 }
 
 ul {
@@ -159,10 +184,10 @@ ul {
 li {
   margin: 14px 0;
   padding: 16px;
-  background: #fff;
-  border: 1px solid #dbe3ea;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #d8e3e1;
   border-radius: 8px;
-  box-shadow: 0 7px 18px rgba(31, 41, 51, 0.06);
+  box-shadow: 0 12px 28px rgba(23, 32, 42, 0.06);
 }
 
 .draggable-material {
@@ -174,7 +199,8 @@ li {
 }
 
 .draggable-material:hover {
-  border-color: #93c5fd;
+  border-color: #7dbeb8;
+  box-shadow: 0 14px 30px rgba(31, 138, 132, 0.11);
 }
 
 .material-item {
@@ -191,7 +217,7 @@ li {
 
 .material-description {
   font-size: 14px;
-  color: #607080;
+  color: #697985;
   margin-top: 5px;
 }
 
@@ -216,20 +242,22 @@ li {
 }
 
 h1 {
-  color: #17212b;
+  color: #111b22;
   text-align: center;
-  font-size: 34px;
-  line-height: 1.15;
-  margin: 12px 0 24px;
+  font-size: 36px;
+  line-height: 1.14;
+  margin: 10px 0 26px;
   letter-spacing: 0;
+  font-weight: 900;
 }
 
 h2 {
-  color: #2f3d4a;
-  font-size: 23px;
+  color: #24333d;
+  font-size: 22px;
   margin: 22px 0 14px;
-  border-bottom: 3px solid #2563eb;
+  border-bottom: 1px solid #cfe0dd;
   padding-bottom: 10px;
+  font-weight: 850;
 }
 
 h3 {
@@ -242,15 +270,15 @@ table {
   border-spacing: 0;
   margin: 20px 0;
   background: #fff;
-  border: 1px solid #dbe3ea;
+  border: 1px solid #d8e3e1;
   border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 8px 20px rgba(31, 41, 51, 0.06);
+  box-shadow: 0 14px 32px rgba(23, 32, 42, 0.07);
 }
 
 table th,
 table td {
-  border-bottom: 1px solid #e1e8ee;
+  border-bottom: 1px solid #e6eeee;
   padding: 12px 14px;
   text-align: left;
   vertical-align: middle;
@@ -258,9 +286,9 @@ table td {
 }
 
 table th {
-  background-color: #e8f0f7;
-  color: #24313f;
-  font-weight: 800;
+  background: #edf5f4;
+  color: #22323c;
+  font-weight: 900;
 }
 
 table tr:last-child td {
@@ -268,7 +296,11 @@ table tr:last-child td {
 }
 
 table tbody tr:nth-child(even) {
-  background-color: #f8fafc;
+  background-color: #f8fbfb;
+}
+
+table tbody tr:hover {
+  background-color: #f1f8f7;
 }
 
 .section-block,
@@ -278,23 +310,24 @@ table tbody tr:nth-child(even) {
 
 .section-block {
   padding: 18px;
-  background: rgba(255, 255, 255, 0.75);
-  border: 1px solid #dbe3ea;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid #d8e3e1;
   border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(23, 32, 42, 0.05);
 }
 
 .report-block {
   padding: 22px;
-  border: 1px solid #dbe3ea;
+  border: 1px solid #d8e3e1;
   border-radius: 8px;
   background: #fff;
-  box-shadow: 0 10px 24px rgba(31, 41, 51, 0.08);
+  box-shadow: 0 16px 38px rgba(23, 32, 42, 0.09);
 }
 
 .report-block.current-report,
 .report-card.current-report {
-  border: 2px solid #0e7490;
-  background: #f0fbfd;
+  border: 2px solid #1f8a84;
+  background: #f2fbfa;
 }
 
 .report-card-grid {
@@ -306,10 +339,10 @@ table tbody tr:nth-child(even) {
 
 .report-card {
   padding: 18px;
-  border: 1px solid #dbe3ea;
+  border: 1px solid #d8e3e1;
   border-radius: 8px;
   background: #fff;
-  box-shadow: 0 8px 20px rgba(31, 41, 51, 0.07);
+  box-shadow: 0 14px 32px rgba(23, 32, 42, 0.07);
 }
 
 .report-card h2 {
@@ -324,7 +357,7 @@ table tbody tr:nth-child(even) {
 }
 
 .report-card-meta span {
-  color: #334155;
+  color: #33424c;
   line-height: 1.35;
 }
 
@@ -332,10 +365,10 @@ table tbody tr:nth-child(even) {
   display: inline-block;
   margin-bottom: 10px;
   padding: 7px 11px;
-  border-radius: 7px;
-  background: #0e7490;
+  border-radius: 8px;
+  background: #1f8a84;
   color: white;
-  font-weight: 800;
+  font-weight: 900;
   font-size: 13px;
 }
 
@@ -349,9 +382,9 @@ table tbody tr:nth-child(even) {
 }
 
 .report-meta span {
-  background: #eef3f7;
-  border: 1px solid #d1dce5;
-  border-radius: 7px;
+  background: #f2f7f6;
+  border: 1px solid #d8e3e1;
+  border-radius: 8px;
   padding: 9px 12px;
 }
 
@@ -369,9 +402,9 @@ table tbody tr:nth-child(even) {
   margin: 16px 0;
   padding: 14px;
   background: #fff;
-  border: 1px solid #dbe3ea;
+  border: 1px solid #d8e3e1;
   border-radius: 8px;
-  box-shadow: 0 7px 18px rgba(31, 41, 51, 0.06);
+  box-shadow: 0 12px 28px rgba(23, 32, 42, 0.06);
 }
 
 .report-material-search {
@@ -388,10 +421,11 @@ table tbody tr:nth-child(even) {
   margin-left: 0;
 }
 
-.report-material-search span {
-  color: #607080;
+.report-material-search span,
+.stock-search-controls span {
+  color: #697985;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .stock-material-search h2 {
@@ -405,7 +439,7 @@ table tbody tr:nth-child(even) {
   flex-wrap: wrap;
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid #dbe3ea;
+  border-top: 1px solid #d8e3e1;
 }
 
 .new-list-form input {
@@ -424,12 +458,6 @@ table tbody tr:nth-child(even) {
   flex: 1;
   min-width: 250px;
   margin-left: 0;
-}
-
-.stock-search-controls span {
-  color: #607080;
-  font-size: 14px;
-  font-weight: 700;
 }
 
 .stock-list-header {
@@ -455,9 +483,9 @@ table tbody tr:nth-child(even) {
 }
 
 .empty-search-result {
-  color: #607080;
+  color: #697985;
   text-align: center;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .small-input {
@@ -465,13 +493,13 @@ table tbody tr:nth-child(even) {
 }
 
 .difference-alert {
-  color: #dc2626;
+  color: #b83a32;
   font-weight: 900;
   font-size: 16px;
 }
 
 .difference-ok {
-  color: #1f9d55;
+  color: #287d52;
   font-weight: 900;
   font-size: 16px;
 }
@@ -479,9 +507,9 @@ table tbody tr:nth-child(even) {
 .stock-summary {
   margin-top: 30px;
   padding: 16px;
-  background-color: #e7f7ed;
+  background-color: #edf8f1;
   border-radius: 8px;
-  border: 2px solid #1f9d55;
+  border: 1px solid #8bc4a5;
 }
 
 .stock-summary h3 {
@@ -499,14 +527,14 @@ table tbody tr:nth-child(even) {
   padding: 22px;
   max-width: 540px;
   background: #fff;
-  border: 1px solid #dbe3ea;
+  border: 1px solid #d8e3e1;
   border-radius: 8px;
-  box-shadow: 0 10px 24px rgba(31, 41, 51, 0.08);
+  box-shadow: 0 16px 38px rgba(23, 32, 42, 0.09);
 }
 
 @media (max-width: 760px) {
   h1 {
-    font-size: 27px;
+    font-size: 28px;
   }
 
   h2 {
