@@ -144,6 +144,7 @@ export interface ReportPayload {
   type: string;
   user_name: string;
   shift: string;
+  duration_seconds?: number;
   differences: unknown[];
 }
 

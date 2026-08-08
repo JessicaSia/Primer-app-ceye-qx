@@ -85,6 +85,7 @@ class ReportPayload(BaseModel):
     type: str = Field(min_length=1)
     user_name: str = Field(min_length=1)
     shift: str = Field(min_length=1)
+    duration_seconds: int = 0
     differences: list[ReportDifferencePayload] = []
 
 
@@ -545,6 +546,7 @@ def create_report(payload: ReportPayload) -> dict:
     timestamp = datetime.now(timezone.utc).isoformat()
     user_name = payload.user_name.strip()
     shift = payload.shift.strip()
+    duration_seconds = max(0, payload.duration_seconds or 0)
     if not user_name or not shift:
         raise HTTPException(status_code=400, detail="User name and shift are required")
 
@@ -558,6 +560,7 @@ def create_report(payload: ReportPayload) -> dict:
                 user_name=user_name,
                 shift=shift,
                 timestamp=timestamp,
+                duration_seconds=duration_seconds,
             )
         )
         if normalized:
@@ -572,6 +575,7 @@ def create_report(payload: ReportPayload) -> dict:
         "user_name": user_name,
         "shift": shift,
         "timestamp": timestamp,
+        "duration_seconds": duration_seconds,
         "differences": [
             {
                 "id": diff["material_id"],
@@ -592,6 +596,7 @@ def create_report(payload: ReportPayload) -> dict:
 def update_report(report_id: str, payload: ReportPayload) -> dict:
     user_name = payload.user_name.strip()
     shift = payload.shift.strip()
+    duration_seconds = max(0, payload.duration_seconds or 0)
     if not user_name or not shift:
         raise HTTPException(status_code=400, detail="User name and shift are required")
 
@@ -601,7 +606,12 @@ def update_report(report_id: str, payload: ReportPayload) -> dict:
         result = connection.execute(
             update(reports)
             .where(reports.c.id == report_id)
-            .values(type=payload.type, user_name=user_name, shift=shift)
+            .values(
+                type=payload.type,
+                user_name=user_name,
+                shift=shift,
+                duration_seconds=duration_seconds,
+            )
         )
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Report not found")

@@ -79,6 +79,7 @@ reports = Table(
     Column("user_name", String, nullable=False, server_default=""),
     Column("shift", String, nullable=False, server_default=""),
     Column("timestamp", String, nullable=False, server_default=func.now()),
+    Column("duration_seconds", Integer, nullable=False, server_default="0"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
@@ -145,6 +146,10 @@ def migrate_existing_tables() -> None:
             if "shift" not in report_columns:
                 connection.execute(
                     text("ALTER TABLE reports ADD COLUMN shift VARCHAR NOT NULL DEFAULT ''")
+                )
+            if "duration_seconds" not in report_columns:
+                connection.execute(
+                    text("ALTER TABLE reports ADD COLUMN duration_seconds INTEGER NOT NULL DEFAULT 0")
                 )
             remove_reports_type_check(connection)
 
@@ -213,6 +218,7 @@ def remove_reports_type_check(connection) -> None:
                 user_name VARCHAR NOT NULL DEFAULT '',
                 shift VARCHAR NOT NULL DEFAULT '',
                 timestamp VARCHAR NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                duration_seconds INTEGER NOT NULL DEFAULT 0,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (id)
             )
@@ -222,8 +228,8 @@ def remove_reports_type_check(connection) -> None:
     connection.execute(
         text(
             """
-            INSERT INTO reports_new (id, type, user_name, shift, timestamp, created_at)
-            SELECT id, type, user_name, shift, timestamp, created_at FROM reports
+            INSERT INTO reports_new (id, type, user_name, shift, timestamp, duration_seconds, created_at)
+            SELECT id, type, user_name, shift, timestamp, duration_seconds, created_at FROM reports
             """
         )
     )

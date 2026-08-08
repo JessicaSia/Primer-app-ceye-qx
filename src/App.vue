@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import {
   addMaterialGas,
   addMaterialVapor,
@@ -54,6 +54,7 @@ interface Report {
   user_name: string;
   shift: string;
   timestamp: string;
+  duration_seconds?: number;
   differences: ReportDifference[];
 }
 
@@ -105,6 +106,9 @@ const editingCustomListId = ref<string | null>(null);
 const reportTimeZone = 'America/Mexico_City';
 const draggingMaterial = ref<{ id: string; type: MaterialType } | null>(null);
 const draggingCustomMaterial = ref<{ id: string; listId: string } | null>(null);
+const countStartedAt = ref<number | null>(null);
+const countElapsedSeconds = ref(0);
+let countTimer: ReturnType<typeof window.setInterval> | null = null;
 
 const activeCustomList = computed(() =>
   customMaterialLists.value.find((list) => list.id === activeCustomListId.value) || null
@@ -255,6 +259,10 @@ onMounted(() => {
   loadData();
 });
 
+onUnmounted(() => {
+  stopCountTimer();
+});
+
 async function loadData() {
   try {
     const [gasData, vaporData, customListData, reportData] = await Promise.all([
@@ -280,11 +288,59 @@ function showNotification(message: string, type: 'success' | 'error' = 'success'
   }, 3000);
 }
 
+function isCountingView(nextView: View) {
+  return nextView === 'gas' || nextView === 'vapor' || nextView === 'custom-count';
+}
+
+function updateCountElapsed() {
+  if (!countStartedAt.value) {
+    countElapsedSeconds.value = 0;
+    return;
+  }
+  countElapsedSeconds.value = Math.max(0, Math.floor((Date.now() - countStartedAt.value) / 1000));
+}
+
+function startCountTimer() {
+  countStartedAt.value = Date.now();
+  countElapsedSeconds.value = 0;
+  if (countTimer) {
+    window.clearInterval(countTimer);
+  }
+  countTimer = window.setInterval(updateCountElapsed, 1000);
+}
+
+function stopCountTimer() {
+  if (countTimer) {
+    window.clearInterval(countTimer);
+    countTimer = null;
+  }
+}
+
+function resetCountTimer() {
+  stopCountTimer();
+  countStartedAt.value = null;
+  countElapsedSeconds.value = 0;
+}
+
+function formatDuration(totalSeconds = 0) {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds || 0));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+  return [hours, minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
 function setView(nextView: View) {
+  if (isCountingView(nextView)) {
+    startCountTimer();
+  } else if (isCountingView(view.value)) {
+    resetCountTimer();
+  }
+
   view.value = nextView;
   showDifferences.value = false;
   countAdditions.value = {};
@@ -464,6 +520,7 @@ function resetCountingPage(type: CountTarget) {
   countAdditions.value = {};
   reportUserName.value = '';
   reportShift.value = '';
+  resetCountTimer();
 }
 
 async function createNewMaterialList() {
@@ -711,10 +768,13 @@ async function saveReport(type: CountTarget, reportDifferences: ReportDifference
   }
 
   try {
+    updateCountElapsed();
+    const durationSeconds = countElapsedSeconds.value;
     const newReport = await createReport({
       type,
       user_name: userName,
       shift,
+      duration_seconds: durationSeconds,
       differences: reportDifferences.map((diff) => ({
         material_id: diff.id,
         material_name: diff.name,
@@ -802,6 +862,7 @@ async function saveReportEdit(report: Report) {
       type: report.type,
       user_name: userName,
       shift,
+      duration_seconds: report.duration_seconds || 0,
       differences: editReportDifferences.value.map((diff) => ({
         material_id: diff.id,
         material_name: diff.name,
@@ -1322,6 +1383,7 @@ function unlockStockPage() {
             <span><strong>Fecha:</strong> {{ formatReportTimestamp(report.timestamp) }}</span>
             <span><strong>Usuario:</strong> {{ report.user_name || 'Sin usuario' }}</span>
             <span><strong>Turno:</strong> {{ report.shift || 'Sin turno' }}</span>
+            <span><strong>Duracion:</strong> {{ formatDuration(report.duration_seconds || 0) }}</span>
             <span>
               <strong>Diferencias:</strong>
               {{ report.differences.filter((diff) => diff.difference !== 0).length }}
@@ -1386,6 +1448,7 @@ function unlockStockPage() {
           <div v-else class="report-meta">
             <span><strong>Usuario:</strong> {{ selectedReport.user_name || 'Sin usuario' }}</span>
             <span><strong>Turno:</strong> {{ selectedReport.shift || 'Sin turno' }}</span>
+            <span><strong>Duracion:</strong> {{ formatDuration(selectedReport.duration_seconds || 0) }}</span>
           </div>
           <div
             v-if="editingReportId === selectedReport.id"
@@ -1487,7 +1550,13 @@ function unlockStockPage() {
 
     <section v-else>
       <h1>Contar {{ currentCountTitle }}</h1>
-      <button @click="setView('select')">Volver</button>
+      <div class="count-page-toolbar">
+        <button @click="setView('select')">Volver</button>
+        <div class="count-timer-card" aria-live="polite">
+          <span>Tiempo de conteo</span>
+          <strong>{{ formatDuration(countElapsedSeconds) }}</strong>
+        </div>
+      </div>
 
       <ul>
         <li v-for="material in currentMaterials" :key="material.id">
