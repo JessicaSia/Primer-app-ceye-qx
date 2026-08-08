@@ -1038,12 +1038,13 @@ function unlockStockPage() {
       <div class="sidebar-brand">
         <span class="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 64 64" role="img">
-            <circle cx="18" cy="48" r="8" fill="none" stroke="currentColor" stroke-width="5" />
-            <circle cx="46" cy="48" r="8" fill="none" stroke="currentColor" stroke-width="5" />
-            <path d="M23 43 44 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="5" />
-            <path d="M41 43 20 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="5" />
-            <path d="M18 14h12" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="5" />
-            <path d="M34 14h12" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="5" />
+            <rect x="10" y="39" width="44" height="10" rx="3" fill="none" stroke="currentColor" stroke-width="4" />
+            <path d="M14 39h36" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="4" />
+            <path d="M19 16v20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="4" />
+            <path d="M15 16h8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="4" />
+            <path d="M33 15 26 36" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="4" />
+            <path d="M37 15 44 36" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="4" />
+            <path d="M32 15h6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="4" />
           </svg>
         </span>
         <div>
