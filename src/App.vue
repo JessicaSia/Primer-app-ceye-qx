@@ -887,6 +887,23 @@ function handleCountInput(event: Event, materialId: string, type: CountTarget) {
   handleCountedChange(materialId, Number(input.value), type);
 }
 
+function focusNextCountInput(event: KeyboardEvent) {
+  const input = event.currentTarget as HTMLInputElement;
+  const currentItem = input.closest('li');
+  const nextInput = currentItem?.nextElementSibling?.querySelector<HTMLInputElement>('.count-input');
+
+  if (nextInput) {
+    nextInput.focus();
+    nextInput.select();
+    nextInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
+  const calculateButton = document.querySelector<HTMLButtonElement>('.calculate-differences-button');
+  calculateButton?.focus();
+  calculateButton?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 function markMaterialComplete(material: Material, type: CountTarget) {
   handleCountedChange(material.id, material.existing, type);
 }
@@ -1567,10 +1584,12 @@ function unlockStockPage() {
             </div>
             <span>Existente: {{ material.existing }}</span>
             <input
+              class="count-input"
               type="number"
               placeholder="Contado"
               :value="material.counted"
               @input="handleCountInput($event, material.id, currentType)"
+              @keydown.enter.prevent="focusNextCountInput"
             />
             <button class="success-button" @click="markMaterialComplete(material, currentType)">
               Completo
@@ -1578,7 +1597,9 @@ function unlockStockPage() {
           </div>
         </li>
       </ul>
-      <button @click="showCalculatedDifferences">Calcular Diferencias</button>
+      <button class="calculate-differences-button" @click="showCalculatedDifferences">
+        Calcular Diferencias
+      </button>
 
       <div v-if="showDifferences">
         <h2>Diferencias</h2>
