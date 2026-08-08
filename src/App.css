@@ -77,10 +77,16 @@ main > section {
   width: 44px;
   height: 44px;
   border-radius: 8px;
-  background: var(--brand-green);
-  color: #064550;
+  background: #fff;
+  color: #111827;
   font-weight: 900;
-  box-shadow: 0 12px 26px rgba(183, 229, 0, 0.24);
+  box-shadow: 0 12px 26px rgba(255, 255, 255, 0.18);
+}
+
+.brand-mark svg {
+  width: 34px;
+  height: 34px;
+  display: block;
 }
 
 .sidebar-brand strong,

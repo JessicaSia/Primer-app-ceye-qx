@@ -1036,7 +1036,16 @@ function unlockStockPage() {
   <main>
     <aside class="sidebar no-print">
       <div class="sidebar-brand">
-        <span class="brand-mark">CQ</span>
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 64 64" role="img">
+            <circle cx="18" cy="48" r="8" fill="none" stroke="currentColor" stroke-width="5" />
+            <circle cx="46" cy="48" r="8" fill="none" stroke="currentColor" stroke-width="5" />
+            <path d="M23 43 44 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="5" />
+            <path d="M41 43 20 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="5" />
+            <path d="M18 14h12" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="5" />
+            <path d="M34 14h12" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="5" />
+          </svg>
+        </span>
         <div>
           <strong>Ceye Qx</strong>
           <span>Inventario</span>
