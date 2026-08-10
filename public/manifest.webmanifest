@@ -1,0 +1,20 @@
+{
+  "name": "Ceye Qx Inventory",
+  "short_name": "Ceye Qx",
+  "description": "Inventario y reportes de conteo para Ceye Quirofano.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4fbfc",
+  "theme_color": "#06aec4",
+  "categories": ["productivity", "medical", "utilities"],
+  "icons": [
+    {
+      "src": "/icons/surgical-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
