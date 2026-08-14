@@ -1,5 +1,11 @@
-const CACHE_NAME = 'ceye-qx-pwa-v1';
-const APP_SHELL = ['/', '/manifest.webmanifest', '/icons/surgical-icon.svg'];
+const CACHE_NAME = 'ceye-qx-pwa-v2';
+const APP_SHELL = [
+  '/',
+  '/manifest.webmanifest',
+  '/icons/surgical-icon.svg',
+  '/icons/surgical-icon-192.png',
+  '/icons/surgical-icon-512.png',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
