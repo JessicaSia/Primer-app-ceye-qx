@@ -1616,6 +1616,9 @@ function unlockStockPage() {
         <div class="report-required-fields">
           <input v-model="reportUserName" type="text" placeholder="Nombre de usuario" required />
           <input v-model="reportShift" type="text" placeholder="Turno" required />
+          <button class="info-button save-report-button" @click="saveReport(currentType, adjustedDifferences)">
+            Guardar Reporte
+          </button>
         </div>
         <table class="differences-table">
           <thead>
@@ -1667,9 +1670,6 @@ function unlockStockPage() {
             </tr>
           </tbody>
         </table>
-        <button class="info-button" @click="saveReport(currentType, adjustedDifferences)">
-          Guardar Reporte
-        </button>
       </div>
     </section>
     </div>

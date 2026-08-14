@@ -1007,6 +1007,17 @@ table tbody tr:hover {
   margin: 14px 0;
 }
 
+.report-required-fields input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.save-report-button {
+  flex-shrink: 0;
+  min-width: 210px;
+  margin-left: auto;
+}
+
 .report-meta span {
   background: var(--brand-blue-soft);
   border: 1px solid var(--line);
@@ -1455,6 +1466,13 @@ table tbody tr:hover {
   .stock-list-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .report-required-fields input,
+  .save-report-button {
+    min-width: 0;
+    width: 100%;
+    margin-left: 0;
   }
 
   .material-item span,
