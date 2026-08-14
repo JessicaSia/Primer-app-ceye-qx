@@ -1,9 +1,12 @@
 import os
-from datetime import datetime, timezone
+import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, desc, func, insert, select, update
@@ -17,10 +20,20 @@ from .database import (
     report_differences,
     reports,
     table_for_type,
+    user_sessions,
+    users,
 )
 
 
 MaterialType = Literal["gas", "vapor"]
+UserRole = Literal["admin", "nurse", "supervisor", "readonly"]
+ROLE_LABELS = {
+    "admin": "Administrador",
+    "nurse": "Enfermeria",
+    "supervisor": "Supervisor/jefatura",
+    "readonly": "Solo lectura",
+}
+ALL_ROLES = set(ROLE_LABELS)
 
 app = FastAPI(title="Ceye Qx Inventory API")
 
@@ -89,9 +102,125 @@ class ReportPayload(BaseModel):
     differences: list[ReportDifferencePayload] = []
 
 
+class LoginPayload(BaseModel):
+    email: str = Field(min_length=3)
+    password: str = Field(min_length=1)
+
+
+class UserPayload(BaseModel):
+    name: str = Field(min_length=1)
+    email: str = Field(min_length=3)
+    password: str = Field(min_length=6)
+    role: UserRole
+
+
+class UserUpdatePayload(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    password: str | None = None
+    role: UserRole | None = None
+
+
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+
+
+def hash_password(password: str, salt: str) -> str:
+    return hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        200_000,
+    ).hex()
+
+
+def verify_password(password: str, salt: str, password_hash: str) -> bool:
+    return secrets.compare_digest(hash_password(password, salt), password_hash)
+
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def normalize_user(row) -> dict:
+    user = row_to_dict(row)
+    return {
+        "id": user["id"],
+        "name": user["name"],
+        "email": user["email"],
+        "role": user["role"],
+        "role_label": ROLE_LABELS.get(user["role"], user["role"]),
+        "created_at": user.get("created_at"),
+        "updated_at": user.get("updated_at"),
+    }
+
+
+def is_expired(value) -> bool:
+    expires_at = value
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at <= datetime.now(timezone.utc)
+
+
+def authenticate_token(authorization: str | None) -> dict | None:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return None
+
+    token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        return None
+
+    token_hash = hash_token(token)
+    with get_engine().begin() as connection:
+        session_row = connection.execute(
+            select(user_sessions).where(user_sessions.c.token_hash == token_hash)
+        ).first()
+        if not session_row:
+            return None
+
+        session = row_to_dict(session_row)
+        if is_expired(session["expires_at"]):
+            connection.execute(delete(user_sessions).where(user_sessions.c.token_hash == token_hash))
+            return None
+
+        user_row = connection.execute(select(users).where(users.c.id == session["user_id"])).first()
+        return normalize_user(user_row) if user_row else None
+
+
+@app.middleware("http")
+async def require_api_auth(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    path = request.url.path
+    public_paths = {"/api/auth/login"}
+    if path.startswith("/api/") and path not in public_paths:
+        user = authenticate_token(request.headers.get("authorization"))
+        if not user:
+            return JSONResponse(
+                {"detail": "Sesion requerida"},
+                status_code=status.HTTP_401_UNAUTHORIZED,
+            )
+        request.state.user = user
+
+    return await call_next(request)
+
+
+def current_user(request: Request) -> dict:
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Sesion requerida")
+    return user
+
+
+def require_role(request: Request, *roles: UserRole) -> dict:
+    user = current_user(request)
+    if user["role"] not in roles:
+        raise HTTPException(status_code=403, detail="No tienes permiso para esta accion")
+    return user
 
 
 def row_to_dict(row) -> dict:
@@ -190,6 +319,126 @@ def health() -> dict:
     return {"status": "ok", "database": database_kind}
 
 
+@app.post("/api/auth/login")
+def login(payload: LoginPayload) -> dict:
+    email = payload.email.strip().lower()
+    with get_engine().begin() as connection:
+        user_row = connection.execute(select(users).where(users.c.email == email)).first()
+        if not user_row:
+            raise HTTPException(status_code=401, detail="Correo o contrasena incorrectos")
+
+        user_data = row_to_dict(user_row)
+        if not verify_password(payload.password, user_data["password_salt"], user_data["password_hash"]):
+            raise HTTPException(status_code=401, detail="Correo o contrasena incorrectos")
+
+        token = secrets.token_urlsafe(32)
+        connection.execute(
+            insert(user_sessions).values(
+                token_hash=hash_token(token),
+                user_id=user_data["id"],
+                expires_at=datetime.now(timezone.utc) + timedelta(days=14),
+            )
+        )
+
+    return {"token": token, "user": normalize_user(user_row)}
+
+
+@app.get("/api/auth/me")
+def get_me(request: Request) -> dict:
+    return current_user(request)
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request) -> dict:
+    authorization = request.headers.get("authorization")
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+        with get_engine().begin() as connection:
+            connection.execute(delete(user_sessions).where(user_sessions.c.token_hash == hash_token(token)))
+    return {"message": "Sesion cerrada"}
+
+
+@app.get("/api/users")
+def get_users(request: Request) -> list[dict]:
+    require_role(request, "admin")
+    with get_engine().begin() as connection:
+        rows = connection.execute(select(users).order_by(users.c.created_at)).fetchall()
+    return [normalize_user(row) for row in rows]
+
+
+@app.post("/api/users", status_code=201)
+def create_user(request: Request, payload: UserPayload) -> dict:
+    require_role(request, "admin")
+    email = payload.email.strip().lower()
+    name = payload.name.strip()
+    if payload.role not in ALL_ROLES:
+        raise HTTPException(status_code=400, detail="Rol invalido")
+
+    salt = secrets.token_hex(16)
+    user_id = str(uuid4())
+    with get_engine().begin() as connection:
+        duplicate = connection.execute(select(users.c.id).where(users.c.email == email)).first()
+        if duplicate:
+            raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese correo")
+        connection.execute(
+            insert(users).values(
+                id=user_id,
+                name=name,
+                email=email,
+                password_hash=hash_password(payload.password, salt),
+                password_salt=salt,
+                role=payload.role,
+            )
+        )
+        row = connection.execute(select(users).where(users.c.id == user_id)).first()
+    return normalize_user(row)
+
+
+@app.put("/api/users/{user_id}")
+def update_user(request: Request, user_id: str, payload: UserUpdatePayload) -> dict:
+    require_role(request, "admin")
+    values = {}
+    if payload.name is not None:
+        values["name"] = payload.name.strip()
+    if payload.email is not None:
+        values["email"] = payload.email.strip().lower()
+    if payload.role is not None:
+        values["role"] = payload.role
+    if payload.password:
+        salt = secrets.token_hex(16)
+        values["password_salt"] = salt
+        values["password_hash"] = hash_password(payload.password, salt)
+    if not values:
+        raise HTTPException(status_code=400, detail="No hay cambios para guardar")
+    values["updated_at"] = func.now()
+
+    with get_engine().begin() as connection:
+        if "email" in values:
+            duplicate = connection.execute(
+                select(users.c.id).where(users.c.email == values["email"]).where(users.c.id != user_id)
+            ).first()
+            if duplicate:
+                raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese correo")
+        result = connection.execute(update(users).where(users.c.id == user_id).values(**values))
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        row = connection.execute(select(users).where(users.c.id == user_id)).first()
+    return normalize_user(row)
+
+
+@app.delete("/api/users/{user_id}")
+def delete_user(request: Request, user_id: str) -> dict:
+    actor = require_role(request, "admin")
+    if actor["id"] == user_id:
+        raise HTTPException(status_code=400, detail="No puedes eliminar tu propia cuenta activa")
+    with get_engine().begin() as connection:
+        connection.execute(delete(user_sessions).where(user_sessions.c.user_id == user_id))
+        result = connection.execute(delete(users).where(users.c.id == user_id))
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return {"message": "Deleted", "id": user_id}
+
+
 @app.get("/api/materials/{material_type}")
 def get_materials(material_type: MaterialType) -> list[dict]:
     table = table_for_type(material_type)
@@ -216,7 +465,8 @@ def get_material_lists() -> list[dict]:
 
 
 @app.post("/api/material-lists", status_code=201)
-def create_material_list(payload: MaterialListPayload) -> dict:
+def create_material_list(request: Request, payload: MaterialListPayload) -> dict:
+    require_role(request, "admin", "supervisor")
     list_id = str(uuid4())
     name = payload.name.strip()
     if not name:
@@ -237,7 +487,8 @@ def create_material_list(payload: MaterialListPayload) -> dict:
 
 
 @app.delete("/api/material-lists/{list_id}")
-def delete_material_list(list_id: str) -> dict:
+def delete_material_list(request: Request, list_id: str) -> dict:
+    require_role(request, "admin")
     with get_engine().begin() as connection:
         connection.execute(delete(custom_materials).where(custom_materials.c.list_id == list_id))
         result = connection.execute(delete(material_lists).where(material_lists.c.id == list_id))
@@ -247,7 +498,8 @@ def delete_material_list(list_id: str) -> dict:
 
 
 @app.post("/api/material-lists/{list_id}/materials", status_code=201)
-def create_custom_material(list_id: str, payload: MaterialPayload) -> dict:
+def create_custom_material(request: Request, list_id: str, payload: MaterialPayload) -> dict:
+    require_role(request, "admin", "supervisor")
     material_id = payload.id or str(uuid4())
     name = payload.name.strip()
     if not name:
@@ -276,7 +528,8 @@ def create_custom_material(list_id: str, payload: MaterialPayload) -> dict:
 
 
 @app.put("/api/material-lists/{list_id}/materials/order")
-def update_custom_material_order(list_id: str, payload: MaterialOrderPayload) -> list[dict]:
+def update_custom_material_order(request: Request, list_id: str, payload: MaterialOrderPayload) -> list[dict]:
+    require_role(request, "admin", "supervisor")
     with get_engine().begin() as connection:
         existing_ids = [
             row._mapping["id"]
@@ -304,7 +557,8 @@ def update_custom_material_order(list_id: str, payload: MaterialOrderPayload) ->
 
 
 @app.put("/api/material-lists/{list_id}/materials/{material_id}")
-def update_custom_material(list_id: str, material_id: str, payload: MaterialPayload) -> dict:
+def update_custom_material(request: Request, list_id: str, material_id: str, payload: MaterialPayload) -> dict:
+    require_role(request, "admin", "supervisor")
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Material name is required")
@@ -329,7 +583,8 @@ def update_custom_material(list_id: str, material_id: str, payload: MaterialPayl
 
 
 @app.put("/api/material-lists/{list_id}/materials/{material_id}/list")
-def move_custom_material(list_id: str, material_id: str, payload: CustomMaterialMovePayload) -> dict:
+def move_custom_material(request: Request, list_id: str, material_id: str, payload: CustomMaterialMovePayload) -> dict:
+    require_role(request, "admin", "supervisor")
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Material name is required")
@@ -365,7 +620,8 @@ def move_custom_material(list_id: str, material_id: str, payload: CustomMaterial
 
 
 @app.delete("/api/material-lists/{list_id}/materials/{material_id}")
-def delete_custom_material(list_id: str, material_id: str) -> dict:
+def delete_custom_material(request: Request, list_id: str, material_id: str) -> dict:
+    require_role(request, "admin")
     with get_engine().begin() as connection:
         result = connection.execute(
             delete(custom_materials)
@@ -378,7 +634,8 @@ def delete_custom_material(list_id: str, material_id: str) -> dict:
 
 
 @app.post("/api/materials/{material_type}", status_code=201)
-def create_material(material_type: MaterialType, payload: MaterialPayload) -> dict:
+def create_material(request: Request, material_type: MaterialType, payload: MaterialPayload) -> dict:
+    require_role(request, "admin", "supervisor")
     table = table_for_type(material_type)
     material_id = payload.id or str(uuid4())
     name = payload.name.strip()
@@ -409,7 +666,8 @@ def create_material(material_type: MaterialType, payload: MaterialPayload) -> di
 
 
 @app.put("/api/materials/{material_type}/order")
-def update_material_order(material_type: MaterialType, payload: MaterialOrderPayload) -> list[dict]:
+def update_material_order(request: Request, material_type: MaterialType, payload: MaterialOrderPayload) -> list[dict]:
+    require_role(request, "admin", "supervisor")
     table = table_for_type(material_type)
     with get_engine().begin() as connection:
         existing_ids = [
@@ -433,7 +691,8 @@ def update_material_order(material_type: MaterialType, payload: MaterialOrderPay
 
 
 @app.put("/api/materials/{material_type}/{material_id}")
-def update_material(material_type: MaterialType, material_id: str, payload: MaterialPayload) -> dict:
+def update_material(request: Request, material_type: MaterialType, material_id: str, payload: MaterialPayload) -> dict:
+    require_role(request, "admin", "supervisor")
     table = table_for_type(material_type)
     name = payload.name.strip()
     if not name:
@@ -461,10 +720,12 @@ def update_material(material_type: MaterialType, material_id: str, payload: Mate
 
 @app.put("/api/materials/{material_type}/{material_id}/type")
 def change_material_type(
+    request: Request,
     material_type: MaterialType,
     material_id: str,
     payload: MaterialTypeChangePayload,
 ) -> dict:
+    require_role(request, "admin", "supervisor")
     source_table = table_for_type(material_type)
     target_table = table_for_type(payload.type)
     name = payload.name.strip()
@@ -472,7 +733,7 @@ def change_material_type(
         raise HTTPException(status_code=400, detail="Material name is required")
 
     if payload.type == material_type:
-        return update_material(material_type, material_id, payload)
+        return update_material(request, material_type, material_id, payload)
 
     with get_engine().begin() as connection:
         source_row = connection.execute(
@@ -508,7 +769,8 @@ def change_material_type(
 
 
 @app.delete("/api/materials/{material_type}/{material_id}")
-def delete_material(material_type: MaterialType, material_id: str) -> dict:
+def delete_material(request: Request, material_type: MaterialType, material_id: str) -> dict:
+    require_role(request, "admin")
     table = table_for_type(material_type)
     with get_engine().begin() as connection:
         result = connection.execute(delete(table).where(table.c.id == material_id))
@@ -541,7 +803,8 @@ def get_reports() -> list[dict]:
 
 
 @app.post("/api/reports", status_code=201)
-def create_report(payload: ReportPayload) -> dict:
+def create_report(request: Request, payload: ReportPayload) -> dict:
+    require_role(request, "admin", "supervisor", "nurse")
     report_id = payload.id or str(uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
     user_name = payload.user_name.strip()
@@ -593,7 +856,8 @@ def create_report(payload: ReportPayload) -> dict:
 
 
 @app.put("/api/reports/{report_id}")
-def update_report(report_id: str, payload: ReportPayload) -> dict:
+def update_report(request: Request, report_id: str, payload: ReportPayload) -> dict:
+    require_role(request, "admin", "supervisor")
     user_name = payload.user_name.strip()
     shift = payload.shift.strip()
     duration_seconds = max(0, payload.duration_seconds or 0)

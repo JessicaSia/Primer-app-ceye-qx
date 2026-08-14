@@ -1,4 +1,6 @@
 import os
+import hashlib
+import secrets
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -95,6 +97,28 @@ report_differences = Table(
     Column("room_count", Integer, nullable=False, server_default="0"),
     Column("process_count", Integer, nullable=False, server_default="0"),
     Column("difference", Integer, nullable=False, server_default="0"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+users = Table(
+    "users",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("name", String, nullable=False),
+    Column("email", String, nullable=False, unique=True),
+    Column("password_hash", String, nullable=False),
+    Column("password_salt", String, nullable=False),
+    Column("role", String, nullable=False, server_default="readonly"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+user_sessions = Table(
+    "user_sessions",
+    metadata,
+    Column("token_hash", String, primary_key=True),
+    Column("user_id", String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
@@ -240,6 +264,27 @@ def remove_reports_type_check(connection) -> None:
 
 def seed_data() -> None:
     with engine.begin() as connection:
+        existing_users = connection.execute(text("SELECT COUNT(*) FROM users")).scalar_one()
+        if existing_users == 0:
+            salt = secrets.token_hex(16)
+            password = os.getenv("DEFAULT_ADMIN_PASSWORD", "CeyeQxAdmin2026!")
+            password_hash = hashlib.pbkdf2_hmac(
+                "sha256",
+                password.encode("utf-8"),
+                salt.encode("utf-8"),
+                200_000,
+            ).hex()
+            connection.execute(
+                users.insert().values(
+                    id="admin-default",
+                    name=os.getenv("DEFAULT_ADMIN_NAME", "Administrador"),
+                    email=os.getenv("DEFAULT_ADMIN_EMAIL", "admin@ceye.local").lower(),
+                    password_hash=password_hash,
+                    password_salt=salt,
+                    role="admin",
+                )
+            )
+
         existing_rows = connection.execute(
             text("SELECT COUNT(*) FROM materials_gas")
         ).scalar_one()

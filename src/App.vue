@@ -4,26 +4,38 @@ import {
   addMaterialGas,
   addMaterialVapor,
   addCustomMaterial,
+  clearAuthToken,
   changeMaterialType,
   createMaterialList,
   createReport,
+  createUser,
   deleteCustomMaterial,
   deleteMaterialGas,
   deleteMaterialVapor,
+  deleteUser,
+  getAuthToken,
   getMaterialLists,
   getMaterialsGas,
   getMaterialsVapor,
+  getMe,
   getReports,
+  getUsers,
+  login,
+  logout,
   moveCustomMaterial,
+  setAuthToken,
+  type AuthUser,
+  type UserRole,
   updateMaterialOrder,
   updateReport,
+  updateUser,
   updateCustomMaterial,
   updateCustomMaterialOrder,
   updateMaterialGas,
   updateMaterialVapor,
 } from './api';
 
-type View = 'home' | 'select' | 'gas' | 'vapor' | 'custom-count' | 'stock' | 'reports';
+type View = 'home' | 'select' | 'gas' | 'vapor' | 'custom-count' | 'stock' | 'reports' | 'users';
 type MaterialType = 'gas' | 'vapor';
 type CountTarget = MaterialType | string;
 
@@ -64,6 +76,21 @@ interface CountAdditions {
 }
 
 const view = ref<View>('home');
+const currentUser = ref<AuthUser | null>(null);
+const loginEmail = ref('');
+const loginPassword = ref('');
+const loginLoading = ref(false);
+const usersList = ref<AuthUser[]>([]);
+const usersLoading = ref(false);
+const newUserName = ref('');
+const newUserEmail = ref('');
+const newUserPassword = ref('');
+const newUserRole = ref<UserRole>('nurse');
+const editingUserId = ref<string | null>(null);
+const editingUserName = ref('');
+const editingUserEmail = ref('');
+const editingUserRole = ref<UserRole>('nurse');
+const editingUserPassword = ref('');
 const materialsGas = ref<Material[]>([]);
 const materialsVapor = ref<Material[]>([]);
 const customMaterialLists = ref<CustomMaterialList[]>([]);
@@ -96,8 +123,6 @@ const reportSearchDate = ref('');
 const highlightedReportId = ref<string | null>(null);
 const printingReportId = ref<string | null>(null);
 const selectedReportId = ref<string | null>(null);
-const stockPassword = ref('');
-const stockAuthenticated = ref(false);
 const stockMaterialSearch = ref('');
 const showStockGasMaterials = ref(false);
 const showStockVaporMaterials = ref(false);
@@ -254,9 +279,26 @@ const filteredReports = computed(() => {
 const selectedReport = computed(() =>
   filteredReports.value.find((report) => report.id === selectedReportId.value) || null
 );
+const roleOptions: Array<{ value: UserRole; label: string }> = [
+  { value: 'admin', label: 'Administrador' },
+  { value: 'nurse', label: 'Enfermeria' },
+  { value: 'supervisor', label: 'Supervisor/jefatura' },
+  { value: 'readonly', label: 'Solo lectura' },
+];
+const canManageUsers = computed(() => currentUser.value?.role === 'admin');
+const canManageStock = computed(() =>
+  currentUser.value?.role === 'admin' || currentUser.value?.role === 'supervisor'
+);
+const canDeleteData = computed(() => currentUser.value?.role === 'admin');
+const canSaveReports = computed(() =>
+  ['admin', 'supervisor', 'nurse'].includes(currentUser.value?.role || '')
+);
+const canEditReports = computed(() =>
+  currentUser.value?.role === 'admin' || currentUser.value?.role === 'supervisor'
+);
 
 onMounted(() => {
-  loadData();
+  loadSession();
 });
 
 onUnmounted(() => {
@@ -279,6 +321,55 @@ async function loadData() {
     console.error(error);
     showNotification('Error cargando datos', 'error');
   }
+}
+
+async function loadSession() {
+  if (!getAuthToken()) {
+    return;
+  }
+
+  try {
+    currentUser.value = await getMe();
+    await loadData();
+  } catch (error) {
+    console.error(error);
+    clearAuthToken();
+    currentUser.value = null;
+  }
+}
+
+async function handleLogin() {
+  if (!loginEmail.value.trim() || !loginPassword.value) {
+    showNotification('Escribe tu correo y contrasena.', 'error');
+    return;
+  }
+
+  loginLoading.value = true;
+  try {
+    const session = await login(loginEmail.value, loginPassword.value);
+    setAuthToken(session.token);
+    currentUser.value = session.user;
+    loginPassword.value = '';
+    await loadData();
+    showNotification(`Bienvenida, ${session.user.name}.`);
+  } catch (error) {
+    console.error(error);
+    showNotification(getErrorMessage(error, 'No se pudo iniciar sesion'), 'error');
+  } finally {
+    loginLoading.value = false;
+  }
+}
+
+async function handleLogout() {
+  try {
+    await logout();
+  } catch (error) {
+    console.error(error);
+  }
+  clearAuthToken();
+  currentUser.value = null;
+  view.value = 'home';
+  resetCountTimer();
 }
 
 function showNotification(message: string, type: 'success' | 'error' = 'success') {
@@ -335,6 +426,18 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 function setView(nextView: View) {
+  if (nextView === 'stock' && !canManageStock.value) {
+    showNotification('Tu rol no permite modificar stock.', 'error');
+    return;
+  }
+  if (nextView === 'select' && !canSaveReports.value) {
+    showNotification('Tu rol es de solo lectura.', 'error');
+    return;
+  }
+  if (nextView === 'users' && !canManageUsers.value) {
+    showNotification('Solo administracion puede gestionar usuarios.', 'error');
+    return;
+  }
   if (isCountingView(nextView)) {
     startCountTimer();
   } else if (isCountingView(view.value)) {
@@ -358,6 +461,101 @@ function setView(nextView: View) {
     showStockGasMaterials.value = false;
     showStockVaporMaterials.value = false;
     shownCustomStockLists.value = {};
+  }
+  if (nextView === 'users') {
+    loadUsersList();
+  }
+}
+
+async function loadUsersList() {
+  if (!canManageUsers.value) return;
+  usersLoading.value = true;
+  try {
+    usersList.value = await getUsers();
+  } catch (error) {
+    console.error(error);
+    showNotification('Error cargando usuarios.', 'error');
+  } finally {
+    usersLoading.value = false;
+  }
+}
+
+function roleLabel(role: UserRole) {
+  return roleOptions.find((option) => option.value === role)?.label || role;
+}
+
+async function createAppUser() {
+  if (!newUserName.value.trim() || !newUserEmail.value.trim() || !newUserPassword.value) {
+    showNotification('Completa nombre, correo y contrasena.', 'error');
+    return;
+  }
+
+  try {
+    const created = await createUser({
+      name: newUserName.value.trim(),
+      email: newUserEmail.value.trim(),
+      password: newUserPassword.value,
+      role: newUserRole.value,
+    });
+    usersList.value = [...usersList.value, created];
+    newUserName.value = '';
+    newUserEmail.value = '';
+    newUserPassword.value = '';
+    newUserRole.value = 'nurse';
+    showNotification(`Usuario "${created.name}" creado correctamente.`);
+  } catch (error) {
+    console.error(error);
+    showNotification(getErrorMessage(error, 'Error creando usuario'), 'error');
+  }
+}
+
+function startUserEdit(user: AuthUser) {
+  editingUserId.value = user.id;
+  editingUserName.value = user.name;
+  editingUserEmail.value = user.email;
+  editingUserRole.value = user.role;
+  editingUserPassword.value = '';
+}
+
+function cancelUserEdit() {
+  editingUserId.value = null;
+  editingUserName.value = '';
+  editingUserEmail.value = '';
+  editingUserPassword.value = '';
+  editingUserRole.value = 'nurse';
+}
+
+async function saveUserEdit(userId: string) {
+  try {
+    const payload: Partial<{ name: string; email: string; password: string; role: UserRole }> = {
+      name: editingUserName.value.trim(),
+      email: editingUserEmail.value.trim(),
+      role: editingUserRole.value,
+    };
+    if (editingUserPassword.value) {
+      payload.password = editingUserPassword.value;
+    }
+    const updated = await updateUser(userId, payload);
+    usersList.value = usersList.value.map((user) => (user.id === userId ? updated : user));
+    if (currentUser.value?.id === userId) {
+      currentUser.value = updated;
+    }
+    cancelUserEdit();
+    showNotification('Usuario actualizado correctamente.');
+  } catch (error) {
+    console.error(error);
+    showNotification(getErrorMessage(error, 'Error actualizando usuario'), 'error');
+  }
+}
+
+async function removeUser(user: AuthUser) {
+  try {
+    await deleteUser(user.id);
+    usersList.value = usersList.value.filter((item) => item.id !== user.id);
+    showNotification(`Usuario "${user.name}" eliminado correctamente.`);
+  } catch (error) {
+    console.error(error);
+    showNotification(getErrorMessage(error, 'Error eliminando usuario'), 'error');
   }
 }
 
@@ -1020,20 +1218,31 @@ async function printReport(reportId: string) {
   window.print();
 }
 
-function unlockStockPage() {
-  if (stockPassword.value === 'PrimerappJESSI9') {
-    stockAuthenticated.value = true;
-    stockPassword.value = '';
-    showNotification('Acceso autorizado.');
-    return;
-  }
-
-  showNotification('Contraseña incorrecta.', 'error');
-}
 </script>
 
 <template>
-  <main>
+  <section v-if="!currentUser" class="login-page">
+    <div v-if="notification" :class="['notification', notification.type]">
+      {{ notification.message }}
+    </div>
+    <form class="login-card" @submit.prevent="handleLogin">
+      <span class="eyebrow">Acceso seguro</span>
+      <h1>Ceye Qx</h1>
+      <p>Inicia sesion con tu cuenta para ver inventario, reportes y permisos de tu rol.</p>
+      <input v-model="loginEmail" type="email" autocomplete="email" placeholder="Correo" />
+      <input
+        v-model="loginPassword"
+        type="password"
+        autocomplete="current-password"
+        placeholder="Contrasena"
+      />
+      <button class="success-button" type="submit" :disabled="loginLoading">
+        {{ loginLoading ? 'Ingresando...' : 'Ingresar' }}
+      </button>
+    </form>
+  </section>
+
+  <main v-else>
     <aside class="sidebar no-print">
       <div class="sidebar-brand">
         <span class="brand-mark" aria-hidden="true">
@@ -1054,15 +1263,25 @@ function unlockStockPage() {
       </div>
       <nav class="sidebar-nav" aria-label="Navegacion principal">
         <button :class="{ active: view === 'home' }" @click="setView('home')">Inicio</button>
-        <button :class="{ active: view === 'select' || view === 'gas' || view === 'vapor' || view === 'custom-count' }" @click="setView('select')">
+        <button
+          v-if="canSaveReports"
+          :class="{ active: view === 'select' || view === 'gas' || view === 'vapor' || view === 'custom-count' }"
+          @click="setView('select')"
+        >
           Conteo
         </button>
-        <button :class="{ active: view === 'stock' }" @click="setView('stock')">Stock</button>
+        <button v-if="canManageStock" :class="{ active: view === 'stock' }" @click="setView('stock')">Stock</button>
         <button :class="{ active: view === 'reports' }" @click="setView('reports')">Reportes</button>
+        <button v-if="canManageUsers" :class="{ active: view === 'users' }" @click="setView('users')">Usuarios</button>
       </nav>
       <div class="sidebar-status">
         <span>{{ stockMaterialCount }}</span>
         <small>materiales activos</small>
+      </div>
+      <div class="sidebar-user">
+        <strong>{{ currentUser.name }}</strong>
+        <span>{{ roleLabel(currentUser.role) }}</span>
+        <button class="ghost-button" @click="handleLogout">Salir</button>
       </div>
     </aside>
 
@@ -1079,8 +1298,9 @@ function unlockStockPage() {
             <p>Resumen operativo de materiales, conteos y reportes guardados.</p>
           </div>
           <div class="dashboard-actions">
-            <button @click="setView('select')">Nuevo Conteo</button>
-            <button class="success-button" @click="setView('stock')">Gestionar Stock</button>
+            <button v-if="canSaveReports" @click="setView('select')">Nuevo Conteo</button>
+            <button v-if="canManageStock" class="success-button" @click="setView('stock')">Gestionar Stock</button>
+            <button class="warning-button" @click="setView('reports')">Ver Reportes</button>
           </div>
         </div>
 
@@ -1132,9 +1352,10 @@ function unlockStockPage() {
           <section class="dashboard-panel">
             <h2>Accesos rapidos</h2>
             <div class="quick-actions">
-              <button @click="setView('select')">Conteo de Inventario</button>
-              <button class="success-button" @click="setView('stock')">Gestionar Stock</button>
+              <button v-if="canSaveReports" @click="setView('select')">Conteo de Inventario</button>
+              <button v-if="canManageStock" class="success-button" @click="setView('stock')">Gestionar Stock</button>
               <button class="warning-button" @click="setView('reports')">Ver Reportes</button>
+              <button v-if="canManageUsers" class="info-button" @click="setView('users')">Usuarios</button>
             </div>
           </section>
 
@@ -1190,14 +1411,9 @@ function unlockStockPage() {
       <h1>Gestion de Stock - Materiales</h1>
       <button @click="setView('home')">Volver</button>
 
-      <div v-if="!stockAuthenticated" class="stock-lock-panel">
-        <input
-          v-model="stockPassword"
-          type="password"
-          placeholder="Contraseña"
-          @keyup.enter="unlockStockPage"
-        />
-        <button class="success-button" @click="unlockStockPage">Ingresar</button>
+      <div v-if="!canManageStock" class="stock-lock-panel">
+        <strong>Sin permiso para modificar stock</strong>
+        <span>Tu cuenta puede consultar informacion, pero no administrar materiales.</span>
       </div>
 
       <div v-else class="section-block">
@@ -1225,7 +1441,7 @@ function unlockStockPage() {
         </div>
       </div>
 
-      <div v-if="stockAuthenticated" class="section-block stock-material-search">
+      <div v-if="canManageStock" class="section-block stock-material-search">
         <h2>Buscar Material para Editar</h2>
         <div class="stock-search-controls">
           <input
@@ -1242,7 +1458,7 @@ function unlockStockPage() {
         </div>
       </div>
 
-      <div v-if="stockAuthenticated" class="section-block">
+      <div v-if="canManageStock" class="section-block">
         <div class="stock-list-header">
           <h2>Materiales de Gas</h2>
           <button class="info-button" @click="showStockGasMaterials = !showStockGasMaterials">
@@ -1264,7 +1480,7 @@ function unlockStockPage() {
             @drop="handleMaterialDrop(material, 'gas')"
           >
             <div v-if="editingId === material.id && editingType === 'gas'" class="edit-form">
-              <select v-model="editingTargetType">
+              <select v-model="editingTargetType" :disabled="!canDeleteData">
                 <option v-for="option in materialListOptions" :key="option.id" :value="option.id">
                   {{ option.name }}
                 </option>
@@ -1279,13 +1495,13 @@ function unlockStockPage() {
               <span><strong>{{ material.name }}</strong></span>
               <span>Stock: {{ material.existing }}</span>
               <button @click="startEditing(material, 'gas')">Editar</button>
-              <button class="danger-button" @click="deleteMaterial(material.id, 'gas')">Borrar</button>
+              <button v-if="canDeleteData" class="danger-button" @click="deleteMaterial(material.id, 'gas')">Borrar</button>
             </div>
           </li>
         </ul>
       </div>
 
-      <div v-if="stockAuthenticated" class="section-block">
+      <div v-if="canManageStock" class="section-block">
         <div class="stock-list-header">
           <h2>Materiales de Vapor</h2>
           <button class="info-button" @click="showStockVaporMaterials = !showStockVaporMaterials">
@@ -1307,7 +1523,7 @@ function unlockStockPage() {
             @drop="handleMaterialDrop(material, 'vapor')"
           >
             <div v-if="editingId === material.id && editingType === 'vapor'" class="edit-form">
-              <select v-model="editingTargetType">
+              <select v-model="editingTargetType" :disabled="!canDeleteData">
                 <option v-for="option in materialListOptions" :key="option.id" :value="option.id">
                   {{ option.name }}
                 </option>
@@ -1322,13 +1538,13 @@ function unlockStockPage() {
               <span><strong>{{ material.name }}</strong></span>
               <span>Stock: {{ material.existing }}</span>
               <button @click="startEditing(material, 'vapor')">Editar</button>
-              <button class="danger-button" @click="deleteMaterial(material.id, 'vapor')">Borrar</button>
+              <button v-if="canDeleteData" class="danger-button" @click="deleteMaterial(material.id, 'vapor')">Borrar</button>
             </div>
           </li>
         </ul>
       </div>
 
-      <template v-if="stockAuthenticated">
+      <template v-if="canManageStock">
         <div
           v-for="list in filteredCustomMaterialLists"
           :key="list.id"
@@ -1357,7 +1573,7 @@ function unlockStockPage() {
               @drop="handleCustomMaterialDrop(material, list.id)"
             >
               <div v-if="editingId === material.id && editingCustomListId === list.id" class="edit-form">
-                <select v-model="editingTargetType">
+                <select v-model="editingTargetType" :disabled="!canDeleteData">
                   <option v-for="option in materialListOptions" :key="option.id" :value="option.id">
                     {{ option.name }}
                   </option>
@@ -1372,12 +1588,70 @@ function unlockStockPage() {
                 <span><strong>{{ material.name }}</strong></span>
                 <span>Stock: {{ material.existing }}</span>
                 <button @click="startCustomMaterialEditing(material, list.id)">Editar</button>
-                <button class="danger-button" @click="removeCustomMaterial(list.id, material)">Borrar</button>
+                <button v-if="canDeleteData" class="danger-button" @click="removeCustomMaterial(list.id, material)">Borrar</button>
               </div>
             </li>
           </ul>
         </div>
       </template>
+    </section>
+
+    <section v-else-if="view === 'users'" class="users-page">
+      <h1>Usuarios y roles</h1>
+      <button @click="setView('home')">Volver</button>
+
+      <div class="section-block user-form">
+        <h2>Crear cuenta</h2>
+        <input v-model="newUserName" type="text" placeholder="Nombre completo" />
+        <input v-model="newUserEmail" type="email" placeholder="Correo" />
+        <input v-model="newUserPassword" type="password" placeholder="Contrasena temporal" />
+        <select v-model="newUserRole">
+          <option v-for="option in roleOptions" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+        </select>
+        <button class="success-button" @click="createAppUser">Crear Usuario</button>
+      </div>
+
+      <div class="section-block">
+        <div class="stock-list-header">
+          <h2>Cuentas activas</h2>
+          <button class="info-button" @click="loadUsersList">
+            {{ usersLoading ? 'Cargando...' : 'Actualizar' }}
+          </button>
+        </div>
+        <div class="user-list">
+          <article v-for="user in usersList" :key="user.id" class="user-card">
+            <div v-if="editingUserId === user.id" class="edit-form user-edit-form">
+              <input v-model="editingUserName" type="text" placeholder="Nombre" />
+              <input v-model="editingUserEmail" type="email" placeholder="Correo" />
+              <select v-model="editingUserRole">
+                <option v-for="option in roleOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+              <input v-model="editingUserPassword" type="password" placeholder="Nueva contrasena opcional" />
+              <button class="success-button" @click="saveUserEdit(user.id)">Guardar</button>
+              <button @click="cancelUserEdit">Cancelar</button>
+            </div>
+            <div v-else class="user-card-content">
+              <div>
+                <strong>{{ user.name }}</strong>
+                <span>{{ user.email }}</span>
+              </div>
+              <span class="role-pill">{{ roleLabel(user.role) }}</span>
+              <button class="info-button" @click="startUserEdit(user)">Editar</button>
+              <button
+                v-if="currentUser?.id !== user.id"
+                class="danger-button"
+                @click="removeUser(user)"
+              >
+                Borrar
+              </button>
+            </div>
+          </article>
+        </div>
+      </div>
     </section>
 
     <section v-else-if="view === 'reports'">
@@ -1426,7 +1700,7 @@ function unlockStockPage() {
           <button @click="closeSelectedReport">Ver lista de reportes</button>
           <div class="report-detail-actions">
             <button
-              v-if="editingReportId !== selectedReport.id"
+              v-if="editingReportId !== selectedReport.id && canEditReports"
               class="info-button"
               @click="startReportEdit(selectedReport)"
             >
@@ -1616,7 +1890,11 @@ function unlockStockPage() {
         <div class="report-required-fields">
           <input v-model="reportUserName" type="text" placeholder="Nombre de usuario" required />
           <input v-model="reportShift" type="text" placeholder="Turno" required />
-          <button class="info-button save-report-button" @click="saveReport(currentType, adjustedDifferences)">
+          <button
+            v-if="canSaveReports"
+            class="info-button save-report-button"
+            @click="saveReport(currentType, adjustedDifferences)"
+          >
             Guardar Reporte
           </button>
         </div>

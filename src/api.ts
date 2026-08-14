@@ -3,6 +3,17 @@ const isLocalBrowser =
   typeof window !== 'undefined' &&
   ['localhost', '127.0.0.1'].includes(window.location.hostname);
 const API_URL = configuredApiUrl || (isLocalBrowser ? 'http://localhost:8000/api' : '');
+const AUTH_TOKEN_KEY = 'ceyeAuthToken';
+
+export type UserRole = 'admin' | 'nurse' | 'supervisor' | 'readonly';
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  role_label: string;
+}
 
 export interface MaterialPayload {
   id?: string;
@@ -28,9 +39,14 @@ async function request<T = any>(path: string, options?: RequestInit): Promise<T>
   }
 
   let response: Response;
+  const token = getAuthToken();
   try {
     response = await fetch(`${API_URL.replace(/\/$/, '')}${path}`, {
-      headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options?.headers || {}),
+      },
       ...options,
     });
   } catch (error) {
@@ -40,12 +56,63 @@ async function request<T = any>(path: string, options?: RequestInit): Promise<T>
   }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      clearAuthToken();
+    }
     const body = await response.json().catch(() => ({}));
     throw new Error(body.detail || body.error || 'API request failed');
   }
 
   return response.json();
 }
+
+export function getAuthToken() {
+  return typeof window === 'undefined' ? null : window.localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+export function setAuthToken(token: string) {
+  window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+}
+
+export function clearAuthToken() {
+  if (typeof window !== 'undefined') {
+    window.localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+}
+
+export const login = (email: string, password: string) =>
+  request<{ token: string; user: AuthUser }>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+
+export const getMe = () => request<AuthUser>('/auth/me');
+
+export const logout = () => request('/auth/logout', { method: 'POST' });
+
+export const getUsers = () => request<AuthUser[]>('/users');
+
+export const createUser = (payload: {
+  name: string;
+  email: string;
+  password: string;
+  role: UserRole;
+}) =>
+  request<AuthUser>('/users', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+export const updateUser = (
+  id: string,
+  payload: Partial<{ name: string; email: string; password: string; role: UserRole }>
+) =>
+  request<AuthUser>(`/users/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+
+export const deleteUser = (id: string) => request(`/users/${id}`, { method: 'DELETE' });
 
 export const getMaterialsGas = () => request('/materials/gas');
 export const getMaterialsVapor = () => request('/materials/vapor');
