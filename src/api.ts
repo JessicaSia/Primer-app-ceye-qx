@@ -88,7 +88,11 @@ export const login = (email: string, password: string) =>
 
 export const getMe = () => request<AuthUser>('/auth/me');
 
-export const logout = () => request('/auth/logout', { method: 'POST' });
+export const logout = (token?: string) =>
+  request('/auth/logout', {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
 
 export const getUsers = () => request<AuthUser[]>('/users');
 

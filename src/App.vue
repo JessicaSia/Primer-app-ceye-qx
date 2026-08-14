@@ -361,15 +361,23 @@ async function handleLogin() {
 }
 
 async function handleLogout() {
-  try {
-    await logout();
-  } catch (error) {
-    console.error(error);
-  }
+  const token = getAuthToken();
   clearAuthToken();
   currentUser.value = null;
   view.value = 'home';
   resetCountTimer();
+  materialsGas.value = [];
+  materialsVapor.value = [];
+  customMaterialLists.value = [];
+  reports.value = [];
+
+  try {
+    if (token) {
+      await logout(token);
+    }
+  } catch (error) {
+    console.error(error);
+  }
 }
 
 function showNotification(message: string, type: 'success' | 'error' = 'success') {
@@ -1281,7 +1289,7 @@ async function printReport(reportId: string) {
       <div class="sidebar-user">
         <strong>{{ currentUser.name }}</strong>
         <span>{{ roleLabel(currentUser.role) }}</span>
-        <button class="ghost-button" @click="handleLogout">Salir</button>
+        <button type="button" class="ghost-button" @click.stop="handleLogout">Salir</button>
       </div>
     </aside>
 
