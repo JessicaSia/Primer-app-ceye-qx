@@ -374,7 +374,7 @@ def apply_rls_policies(connection) -> None:
         else:
             condition = (
                 "organization_id = current_setting('app.organization_id', true) "
-                "AND (current_setting('app.role', true) IN ('admin','supervisor') "
+                "AND (current_setting('app.role', true) IN ('owner','admin','supervisor') "
                 "OR area_id = current_setting('app.area_id', true))"
             )
         connection.execute(
@@ -434,6 +434,38 @@ def remove_reports_type_check(connection) -> None:
 
 def seed_data() -> None:
     with engine.begin() as connection:
+        existing_owner = connection.execute(
+            text("SELECT COUNT(*) FROM users WHERE role = 'owner'")
+        ).scalar_one()
+        if existing_owner == 0:
+            owner_username = os.getenv("OWNER_USERNAME", "").strip().lower()
+            password = os.getenv("OWNER_PASSWORD", "")
+            if owner_username and password:
+                salt = secrets.token_hex(16)
+                password_hash = hashlib.pbkdf2_hmac(
+                    "sha256",
+                    password.encode("utf-8"),
+                    salt.encode("utf-8"),
+                    200_000,
+                ).hex()
+                existing_owner_username = connection.execute(
+                    text("SELECT COUNT(*) FROM users WHERE username = :username"),
+                    {"username": owner_username},
+                ).scalar_one()
+                if existing_owner_username:
+                    owner_username = f"{owner_username}owner"
+                connection.execute(
+                    users.insert().values(
+                        id="owner-default",
+                        name=os.getenv("OWNER_NAME", "Creador HyunSia"),
+                        username=owner_username,
+                        email=os.getenv("OWNER_EMAIL", f"{owner_username}@ceye.local").lower(),
+                        password_hash=password_hash,
+                        password_salt=salt,
+                        role="owner",
+                    )
+                )
+
         existing_users = connection.execute(text("SELECT COUNT(*) FROM users")).scalar_one()
         if existing_users == 0:
             salt = secrets.token_hex(16)

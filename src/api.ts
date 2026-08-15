@@ -4,8 +4,10 @@ const isLocalBrowser =
   ['localhost', '127.0.0.1'].includes(window.location.hostname);
 const API_URL = configuredApiUrl || (isLocalBrowser ? 'http://localhost:8000/api' : '');
 const AUTH_TOKEN_KEY = 'ceyeAuthToken';
+const CONTEXT_ORGANIZATION_KEY = 'ceyeContextOrganization';
+const CONTEXT_AREA_KEY = 'ceyeContextArea';
 
-export type UserRole = 'admin' | 'nurse' | 'supervisor' | 'readonly';
+export type UserRole = 'owner' | 'admin' | 'nurse' | 'supervisor' | 'readonly';
 
 export interface AuthUser {
   id: string;
@@ -54,11 +56,13 @@ async function request<T = any>(path: string, options?: RequestInit): Promise<T>
 
   let response: Response;
   const token = getAuthToken();
+  const contextHeaders = getContextHeaders();
   try {
     response = await fetch(`${API_URL.replace(/\/$/, '')}${path}`, {
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...contextHeaders,
         ...(options?.headers || {}),
       },
       ...options,
@@ -118,7 +122,46 @@ export function setAuthToken(token: string) {
 export function clearAuthToken() {
   if (typeof window !== 'undefined') {
     window.localStorage.removeItem(AUTH_TOKEN_KEY);
+    clearActiveContext();
   }
+}
+
+function getContextHeaders() {
+  if (typeof window === 'undefined') return {};
+  const organizationId = window.localStorage.getItem(CONTEXT_ORGANIZATION_KEY);
+  const areaId = window.localStorage.getItem(CONTEXT_AREA_KEY);
+  return {
+    ...(organizationId ? { 'X-Organization-Id': organizationId } : {}),
+    ...(areaId ? { 'X-Area-Id': areaId } : {}),
+  };
+}
+
+export function getActiveContext() {
+  if (typeof window === 'undefined') return { organizationId: '', areaId: '' };
+  return {
+    organizationId: window.localStorage.getItem(CONTEXT_ORGANIZATION_KEY) || '',
+    areaId: window.localStorage.getItem(CONTEXT_AREA_KEY) || '',
+  };
+}
+
+export function setActiveContext(organizationId: string, areaId = '') {
+  if (typeof window === 'undefined') return;
+  if (organizationId) {
+    window.localStorage.setItem(CONTEXT_ORGANIZATION_KEY, organizationId);
+  } else {
+    window.localStorage.removeItem(CONTEXT_ORGANIZATION_KEY);
+  }
+  if (areaId) {
+    window.localStorage.setItem(CONTEXT_AREA_KEY, areaId);
+  } else {
+    window.localStorage.removeItem(CONTEXT_AREA_KEY);
+  }
+}
+
+export function clearActiveContext() {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(CONTEXT_ORGANIZATION_KEY);
+  window.localStorage.removeItem(CONTEXT_AREA_KEY);
 }
 
 export const login = (username: string, password: string) =>
@@ -137,11 +180,16 @@ export const logout = (token?: string) =>
 
 export const getUsers = () => request<AuthUser[]>('/users');
 export const getOrganizations = () => request<Organization[]>('/organizations');
-export const getAreas = () => request<Area[]>('/areas');
-export const createArea = (name: string) =>
-  request<Area>('/areas', {
+export const createOrganization = (name: string) =>
+  request<Organization>('/organizations', {
     method: 'POST',
     body: JSON.stringify({ name }),
+  });
+export const getAreas = () => request<Area[]>('/areas');
+export const createArea = (name: string, organization_id?: string) =>
+  request<Area>('/areas', {
+    method: 'POST',
+    body: JSON.stringify({ name, organization_id }),
   });
 
 export const createUser = (payload: {
@@ -149,6 +197,7 @@ export const createUser = (payload: {
   username: string;
   password: string;
   role: UserRole;
+  organization_id?: string;
   area_id?: string;
 }) =>
   request<AuthUser>('/users', {
@@ -158,7 +207,7 @@ export const createUser = (payload: {
 
 export const updateUser = (
   id: string,
-  payload: Partial<{ name: string; username: string; password: string; role: UserRole; area_id: string }>
+  payload: Partial<{ name: string; username: string; password: string; role: UserRole; organization_id: string; area_id: string }>
 ) =>
   request<AuthUser>(`/users/${id}`, {
     method: 'PUT',

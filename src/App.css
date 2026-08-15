@@ -1222,6 +1222,23 @@ table tbody tr:hover {
   box-shadow: 0 12px 30px rgba(6, 174, 196, 0.07);
 }
 
+.owner-context-panel {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, 0.7fr);
+  gap: 12px;
+  align-items: end;
+  background:
+    linear-gradient(135deg, rgba(6, 174, 196, 0.12), rgba(183, 229, 0, 0.14)),
+    rgba(255, 255, 255, 0.88);
+  border-color: rgba(6, 174, 196, 0.28);
+  animation: riseIn 0.36s ease-out both;
+}
+
+.owner-context-panel h2 {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .report-block {
   padding: 22px;
   border: 1px solid var(--line);
@@ -1574,6 +1591,7 @@ table tbody tr:hover {
   }
 
   .user-form,
+  .owner-context-panel,
   .user-edit-form,
   .user-card-content {
     grid-template-columns: 1fr;

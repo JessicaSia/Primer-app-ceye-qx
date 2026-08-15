@@ -7,6 +7,7 @@ import {
   clearAuthToken,
   changeMaterialType,
   createArea,
+  createOrganization,
   createMaterialList,
   createReport,
   createUser,
@@ -15,6 +16,7 @@ import {
   deleteMaterialVapor,
   deleteUser,
   getAuthToken,
+  getActiveContext,
   getAreas,
   getMaterialLists,
   getMaterialsGas,
@@ -26,6 +28,7 @@ import {
   login,
   logout,
   moveCustomMaterial,
+  setActiveContext,
   setAuthToken,
   type Area,
   type AuthUser,
@@ -88,17 +91,22 @@ const loginLoading = ref(false);
 const usersList = ref<AuthUser[]>([]);
 const areasList = ref<Area[]>([]);
 const organizationsList = ref<Organization[]>([]);
+const selectedOrganizationId = ref(getActiveContext().organizationId);
+const selectedAreaId = ref(getActiveContext().areaId);
 const usersLoading = ref(false);
+const newOrganizationName = ref('');
 const newUserName = ref('');
 const newUsername = ref('');
 const newUserPassword = ref('');
 const newUserRole = ref<UserRole>('nurse');
+const newUserOrganizationId = ref('');
 const newUserAreaId = ref('');
 const newAreaName = ref('');
 const editingUserId = ref<string | null>(null);
 const editingUserName = ref('');
 const editingUsername = ref('');
 const editingUserRole = ref<UserRole>('nurse');
+const editingUserOrganizationId = ref('');
 const editingUserAreaId = ref('');
 const editingUserPassword = ref('');
 const materialsGas = ref<Material[]>([]);
@@ -290,22 +298,30 @@ const selectedReport = computed(() =>
   filteredReports.value.find((report) => report.id === selectedReportId.value) || null
 );
 const roleOptions: Array<{ value: UserRole; label: string }> = [
+  { value: 'owner', label: 'Creador' },
   { value: 'admin', label: 'Administrador' },
   { value: 'nurse', label: 'Enfermeria' },
   { value: 'supervisor', label: 'Supervisor/jefatura' },
   { value: 'readonly', label: 'Solo lectura' },
 ];
-const canManageUsers = computed(() => currentUser.value?.role === 'admin');
-const canManageStock = computed(() =>
-  currentUser.value?.role === 'admin' || currentUser.value?.role === 'supervisor'
+const assignableRoleOptions = computed(() => roleOptions.filter((option) => option.value !== 'owner'));
+const isOwner = computed(() => currentUser.value?.role === 'owner');
+const currentOrganizationId = computed(() => (isOwner.value ? selectedOrganizationId.value : currentUser.value?.organization_id || ''));
+const currentAreaId = computed(() => (isOwner.value ? selectedAreaId.value : currentUser.value?.area_id || ''));
+const filteredAreasList = computed(() =>
+  areasList.value.filter((area) => !currentOrganizationId.value || area.organization_id === currentOrganizationId.value)
 );
-const canDeleteData = computed(() => currentUser.value?.role === 'admin');
+const canManageUsers = computed(() => currentUser.value?.role === 'admin' || isOwner.value);
+const canManageStock = computed(() =>
+  isOwner.value || currentUser.value?.role === 'admin' || currentUser.value?.role === 'supervisor'
+);
+const canDeleteData = computed(() => isOwner.value || currentUser.value?.role === 'admin');
 const canSaveReports = computed(() =>
-  ['admin', 'supervisor', 'nurse'].includes(currentUser.value?.role || '')
+  ['owner', 'admin', 'supervisor', 'nurse'].includes(currentUser.value?.role || '')
 );
 const reportEditWindowMs = 12 * 60 * 60 * 1000;
-const currentOrganizationName = computed(() => organizationLabel(currentUser.value?.organization_id));
-const currentAreaName = computed(() => areaLabel(currentUser.value?.area_id));
+const currentOrganizationName = computed(() => organizationLabel(currentOrganizationId.value));
+const currentAreaName = computed(() => areaLabel(currentAreaId.value));
 
 onMounted(() => {
   loadSession();
@@ -316,6 +332,16 @@ onUnmounted(() => {
 });
 
 async function loadData() {
+  try {
+    const [organizationData, areaData] = await Promise.all([getOrganizations(), getAreas()]);
+    organizationsList.value = organizationData;
+    areasList.value = areaData;
+    ensureOwnerContext();
+  } catch (error) {
+    console.error(error);
+    showNotification(getErrorMessage(error, 'Error cargando hospital y areas'), 'error');
+  }
+
   try {
     const [gasData, vaporData, customListData, reportData] = await Promise.all([
       getMaterialsGas(),
@@ -330,15 +356,6 @@ async function loadData() {
   } catch (error) {
     console.error(error);
     showNotification(getErrorMessage(error, 'Error cargando datos'), 'error');
-  }
-
-  try {
-    const [organizationData, areaData] = await Promise.all([getOrganizations(), getAreas()]);
-    organizationsList.value = organizationData;
-    areasList.value = areaData;
-  } catch (error) {
-    console.error(error);
-    showNotification(getErrorMessage(error, 'Error cargando hospital y areas'), 'error');
   }
 }
 
@@ -506,7 +523,13 @@ async function loadUsersList() {
       console.error(areaError);
       showNotification(getErrorMessage(areaError, 'Error cargando areas'), 'error');
     }
-    if (!newUserAreaId.value && areasList.value[0]) {
+    if (isOwner.value) {
+      newUserOrganizationId.value = newUserOrganizationId.value || selectedOrganizationId.value;
+      const availableAreas = areasList.value.filter((area) => area.organization_id === newUserOrganizationId.value);
+      if (!newUserAreaId.value && availableAreas[0]) {
+        newUserAreaId.value = availableAreas[0].id;
+      }
+    } else if (!newUserAreaId.value && areasList.value[0]) {
       newUserAreaId.value = areasList.value[0].id;
     }
   } catch (error) {
@@ -529,16 +552,71 @@ function areaLabel(areaId?: string) {
   return areasList.value.find((area) => area.id === areaId)?.name || 'Sin area';
 }
 
+function ensureOwnerContext() {
+  if (!isOwner.value) return;
+
+  if (!selectedOrganizationId.value && organizationsList.value[0]) {
+    selectedOrganizationId.value = organizationsList.value[0].id;
+  }
+  const availableAreas = areasList.value.filter((area) => area.organization_id === selectedOrganizationId.value);
+  if (!selectedAreaId.value || !availableAreas.some((area) => area.id === selectedAreaId.value)) {
+    selectedAreaId.value = availableAreas[0]?.id || '';
+  }
+  setActiveContext(selectedOrganizationId.value, selectedAreaId.value);
+}
+
+async function changeOwnerContext() {
+  if (!isOwner.value) return;
+  const availableAreas = areasList.value.filter((area) => area.organization_id === selectedOrganizationId.value);
+  if (!availableAreas.some((area) => area.id === selectedAreaId.value)) {
+    selectedAreaId.value = availableAreas[0]?.id || '';
+  }
+  setActiveContext(selectedOrganizationId.value, selectedAreaId.value);
+  await loadData();
+  if (view.value === 'users') {
+    await loadUsersList();
+  }
+}
+
+async function createAppOrganization() {
+  const name = newOrganizationName.value.trim();
+  if (!name) {
+    showNotification('Escribe el nombre del hospital.', 'error');
+    return;
+  }
+
+  try {
+    const organization = await createOrganization(name);
+    organizationsList.value = [...organizationsList.value, organization];
+    selectedOrganizationId.value = organization.id;
+    selectedAreaId.value = '';
+    newUserOrganizationId.value = organization.id;
+    newOrganizationName.value = '';
+    setActiveContext(selectedOrganizationId.value, selectedAreaId.value);
+    showNotification(`Hospital "${organization.name}" creado correctamente.`);
+  } catch (error) {
+    console.error(error);
+    showNotification(getErrorMessage(error, 'Error creando hospital'), 'error');
+  }
+}
+
 async function createAppArea() {
   const name = newAreaName.value.trim();
   if (!name) {
     showNotification('Escribe el nombre del area.', 'error');
     return;
   }
+  if (isOwner.value && !selectedOrganizationId.value) {
+    showNotification('Selecciona un hospital antes de crear una sede.', 'error');
+    return;
+  }
 
   try {
-    const area = await createArea(name);
+    const organizationId = isOwner.value ? selectedOrganizationId.value : undefined;
+    const area = await createArea(name, organizationId);
     areasList.value = [...areasList.value, area];
+    selectedAreaId.value = area.id;
+    setActiveContext(selectedOrganizationId.value, selectedAreaId.value);
     newUserAreaId.value = area.id;
     newAreaName.value = '';
     showNotification(`Area "${area.name}" creada correctamente.`);
@@ -560,6 +638,7 @@ async function createAppUser() {
       username: newUsername.value.trim(),
       password: newUserPassword.value,
       role: newUserRole.value,
+      organization_id: isOwner.value ? newUserOrganizationId.value || selectedOrganizationId.value : undefined,
       area_id: newUserAreaId.value || undefined,
     });
     usersList.value = [...usersList.value, created];
@@ -567,6 +646,7 @@ async function createAppUser() {
     newUsername.value = '';
     newUserPassword.value = '';
     newUserRole.value = 'nurse';
+    newUserOrganizationId.value = isOwner.value ? selectedOrganizationId.value : '';
     showNotification(`Usuario "${created.name}" creado correctamente.`);
   } catch (error) {
     console.error(error);
@@ -579,6 +659,7 @@ function startUserEdit(user: AuthUser) {
   editingUserName.value = user.name;
   editingUsername.value = user.username;
   editingUserRole.value = user.role;
+  editingUserOrganizationId.value = user.organization_id;
   editingUserAreaId.value = user.area_id;
   editingUserPassword.value = '';
 }
@@ -589,15 +670,17 @@ function cancelUserEdit() {
   editingUsername.value = '';
   editingUserPassword.value = '';
   editingUserRole.value = 'nurse';
+  editingUserOrganizationId.value = '';
   editingUserAreaId.value = '';
 }
 
 async function saveUserEdit(userId: string) {
   try {
-    const payload: Partial<{ name: string; username: string; password: string; role: UserRole; area_id: string }> = {
+    const payload: Partial<{ name: string; username: string; password: string; role: UserRole; organization_id: string; area_id: string }> = {
       name: editingUserName.value.trim(),
       username: editingUsername.value.trim(),
       role: editingUserRole.value,
+      organization_id: isOwner.value ? editingUserOrganizationId.value : undefined,
       area_id: editingUserAreaId.value,
     };
     if (editingUserPassword.value) {
@@ -1411,6 +1494,20 @@ async function printReport(reportId: string) {
       </div>
 
       <section v-if="view === 'home'" class="dashboard">
+        <div v-if="isOwner" class="section-block owner-context-panel">
+          <h2>Vista global del creador</h2>
+          <select v-model="selectedOrganizationId" @change="changeOwnerContext">
+            <option v-for="organization in organizationsList" :key="organization.id" :value="organization.id">
+              {{ organization.name }}
+            </option>
+          </select>
+          <select v-model="selectedAreaId" @change="changeOwnerContext">
+            <option v-for="area in filteredAreasList" :key="area.id" :value="area.id">
+              {{ area.name }}
+            </option>
+          </select>
+        </div>
+
         <div class="dashboard-hero">
           <div class="dashboard-identity">
             <span class="eyebrow">Panel principal</span>
@@ -1725,7 +1822,16 @@ async function printReport(reportId: string) {
       <button @click="setView('home')">Volver</button>
 
       <div class="section-block user-form">
-        <h2>Areas del hospital</h2>
+        <h2>Hospitales y sedes</h2>
+        <template v-if="isOwner">
+          <input v-model="newOrganizationName" type="text" placeholder="Nuevo hospital" @keyup.enter="createAppOrganization" />
+          <button class="success-button" @click="createAppOrganization">Crear Hospital</button>
+          <select v-model="selectedOrganizationId" @change="changeOwnerContext">
+            <option v-for="organization in organizationsList" :key="organization.id" :value="organization.id">
+              {{ organization.name }}
+            </option>
+          </select>
+        </template>
         <input v-model="newAreaName" type="text" placeholder="Nueva area" @keyup.enter="createAppArea" />
         <button class="info-button" @click="createAppArea">Crear Area</button>
       </div>
@@ -1741,12 +1847,21 @@ async function printReport(reportId: string) {
         />
         <input v-model="newUserPassword" type="password" placeholder="Contrasena temporal" />
         <select v-model="newUserRole">
-          <option v-for="option in roleOptions" :key="option.value" :value="option.value">
+          <option v-for="option in assignableRoleOptions" :key="option.value" :value="option.value">
             {{ option.label }}
           </option>
         </select>
+        <select v-if="isOwner" v-model="newUserOrganizationId" @change="newUserAreaId = ''">
+          <option v-for="organization in organizationsList" :key="organization.id" :value="organization.id">
+            {{ organization.name }}
+          </option>
+        </select>
         <select v-model="newUserAreaId">
-          <option v-for="area in areasList" :key="area.id" :value="area.id">
+          <option
+            v-for="area in areasList.filter((item) => !isOwner || item.organization_id === (newUserOrganizationId || selectedOrganizationId))"
+            :key="area.id"
+            :value="area.id"
+          >
             {{ area.name }}
           </option>
         </select>
@@ -1771,12 +1886,21 @@ async function printReport(reportId: string) {
                 placeholder="Nombre de usuario"
               />
               <select v-model="editingUserRole">
-                <option v-for="option in roleOptions" :key="option.value" :value="option.value">
+                <option v-for="option in assignableRoleOptions" :key="option.value" :value="option.value">
                   {{ option.label }}
                 </option>
               </select>
+              <select v-if="isOwner" v-model="editingUserOrganizationId" @change="editingUserAreaId = ''">
+                <option v-for="organization in organizationsList" :key="organization.id" :value="organization.id">
+                  {{ organization.name }}
+                </option>
+              </select>
               <select v-model="editingUserAreaId">
-                <option v-for="area in areasList" :key="area.id" :value="area.id">
+                <option
+                  v-for="area in areasList.filter((item) => !isOwner || item.organization_id === editingUserOrganizationId)"
+                  :key="area.id"
+                  :value="area.id"
+                >
                   {{ area.name }}
                 </option>
               </select>
@@ -1790,10 +1914,12 @@ async function printReport(reportId: string) {
                 <span>@{{ user.username }}</span>
               </div>
               <span class="role-pill">{{ roleLabel(user.role) }}</span>
+              <span v-if="isOwner" class="role-pill">{{ organizationLabel(user.organization_id) }}</span>
               <span class="role-pill">{{ areaLabel(user.area_id) }}</span>
-              <button class="info-button" @click="startUserEdit(user)">Editar</button>
+              <button v-if="user.role === 'owner'" class="info-button" disabled>Cuenta creadora</button>
+              <button v-else class="info-button" @click="startUserEdit(user)">Editar</button>
               <button
-                v-if="currentUser?.id !== user.id"
+                v-if="currentUser?.id !== user.id && user.role !== 'owner'"
                 class="danger-button"
                 @click="removeUser(user)"
               >

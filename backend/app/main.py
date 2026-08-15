@@ -30,8 +30,9 @@ from .database import (
 
 
 MaterialType = Literal["gas", "vapor"]
-UserRole = Literal["admin", "nurse", "supervisor", "readonly"]
+UserRole = Literal["owner", "admin", "nurse", "supervisor", "readonly"]
 ROLE_LABELS = {
+    "owner": "Creador",
     "admin": "Administrador",
     "nurse": "Enfermeria",
     "supervisor": "Supervisor/jefatura",
@@ -81,6 +82,11 @@ class MaterialListPayload(BaseModel):
 
 class AreaPayload(BaseModel):
     name: str = Field(min_length=1)
+    organization_id: str | None = None
+
+
+class OrganizationPayload(BaseModel):
+    name: str = Field(min_length=1)
 
 
 class CustomMaterialMovePayload(MaterialPayload):
@@ -120,6 +126,7 @@ class UserPayload(BaseModel):
     username: str = Field(min_length=3)
     password: str = Field(min_length=6)
     role: UserRole
+    organization_id: str | None = None
     area_id: str | None = None
 
 
@@ -128,6 +135,7 @@ class UserUpdatePayload(BaseModel):
     username: str | None = None
     password: str | None = None
     role: UserRole | None = None
+    organization_id: str | None = None
     area_id: str | None = None
 
 
@@ -204,22 +212,71 @@ def normalize_area(row) -> dict:
     }
 
 
+def is_owner(user: dict) -> bool:
+    return user["role"] == "owner"
+
+
 def can_access_all_areas(user: dict) -> bool:
-    return user["role"] in {"admin", "supervisor"}
+    return user["role"] in {"owner", "admin", "supervisor"}
 
 
 def scope_condition(table, user: dict):
-    conditions = [table.c.organization_id == user["organization_id"]]
-    if not can_access_all_areas(user):
+    conditions = []
+    if user.get("organization_id"):
+        conditions.append(table.c.organization_id == user["organization_id"])
+    selected_area_id = user.get("_selected_area_id")
+    if selected_area_id:
+        conditions.append(table.c.area_id == selected_area_id)
+    elif not can_access_all_areas(user):
         conditions.append(table.c.area_id == user["area_id"])
+    if not conditions:
+        return text("1 = 1")
     return and_(*conditions)
 
 
 def scope_values(user: dict) -> dict:
+    if not user.get("organization_id") or not user.get("area_id"):
+        raise HTTPException(status_code=400, detail="Selecciona hospital y sede antes de guardar datos")
     return {
         "organization_id": user["organization_id"],
         "area_id": user["area_id"],
     }
+
+
+def get_context_header(request: Request, name: str) -> str | None:
+    value = request.headers.get(name)
+    return value.strip() if value and value.strip() else None
+
+
+def resolve_scoped_user(request: Request, connection) -> dict:
+    user = dict(current_user(request))
+    if not is_owner(user):
+        return user
+
+    organization_id = get_context_header(request, "x-organization-id") or user.get("organization_id")
+    area_id = get_context_header(request, "x-area-id")
+
+    if organization_id:
+        row = connection.execute(select(organizations.c.id).where(organizations.c.id == organization_id)).first()
+        if not row:
+            raise HTTPException(status_code=400, detail="Hospital no valido")
+        user["organization_id"] = organization_id
+
+    if area_id:
+        row = connection.execute(
+            select(areas.c.id)
+            .where(areas.c.id == area_id)
+            .where(areas.c.organization_id == user.get("organization_id"))
+        ).first()
+        if not row:
+            raise HTTPException(status_code=400, detail="Sede no valida para este hospital")
+        user["area_id"] = area_id
+        user["_selected_area_id"] = area_id
+    else:
+        user["area_id"] = None
+        user["_selected_area_id"] = None
+
+    return user
 
 
 def set_rls_context(connection, user: dict) -> None:
@@ -247,8 +304,8 @@ def validate_area_for_user(connection, user: dict, area_id: str | None) -> str:
 
 @contextmanager
 def scoped_connection(request: Request):
-    user = current_user(request)
     with get_engine().begin() as connection:
+        user = resolve_scoped_user(request, connection)
         set_rls_context(connection, user)
         yield connection, user
 
@@ -287,7 +344,7 @@ def report_is_in_nurse_edit_window(report_row) -> bool:
 
 def require_report_edit_permission(request: Request, report_row) -> dict:
     user = current_user(request)
-    if user["role"] in {"admin", "supervisor"}:
+    if user["role"] in {"owner", "admin", "supervisor"}:
         return user
     if user["role"] == "nurse" and report_is_in_nurse_edit_window(report_row):
         return user
@@ -350,6 +407,8 @@ def current_user(request: Request) -> dict:
 
 def require_role(request: Request, *roles: UserRole) -> dict:
     user = current_user(request)
+    if is_owner(user):
+        return user
     if user["role"] not in roles:
         raise HTTPException(status_code=403, detail="No tienes permiso para esta accion")
     return user
@@ -494,11 +553,14 @@ def logout(request: Request) -> dict:
 def get_users(request: Request) -> list[dict]:
     with scoped_connection(request) as (connection, user):
         require_role(request, "admin")
-        rows = connection.execute(
-            select(users)
-            .where(users.c.organization_id == user["organization_id"])
-            .order_by(users.c.created_at)
-        ).fetchall()
+        query = select(users).order_by(users.c.created_at)
+        if not is_owner(user):
+            query = query.where(users.c.organization_id == user["organization_id"])
+        elif user.get("organization_id"):
+            query = query.where(users.c.organization_id == user["organization_id"])
+        if is_owner(user) and user.get("_selected_area_id"):
+            query = query.where(users.c.area_id == user["_selected_area_id"])
+        rows = connection.execute(query).fetchall()
     return [normalize_user(row) for row in rows]
 
 
@@ -510,14 +572,19 @@ def create_user(request: Request, payload: UserPayload) -> dict:
     name = payload.name.strip()
     if payload.role not in ALL_ROLES:
         raise HTTPException(status_code=400, detail="Rol invalido")
+    if payload.role == "owner":
+        raise HTTPException(status_code=400, detail="Solo puede existir una cuenta creadora")
 
     salt = secrets.token_hex(16)
     user_id = str(uuid4())
     with scoped_connection(request) as (connection, user):
-        area_id = validate_area_for_user(connection, user, payload.area_id)
+        target_user = dict(user)
+        if is_owner(actor) and payload.organization_id:
+            target_user["organization_id"] = payload.organization_id
+        area_id = validate_area_for_user(connection, target_user, payload.area_id)
         duplicate = connection.execute(
             select(users.c.id)
-            .where(users.c.organization_id == actor["organization_id"])
+            .where(users.c.organization_id == target_user["organization_id"])
             .where(users.c.username == username)
         ).first()
         if duplicate:
@@ -528,7 +595,7 @@ def create_user(request: Request, payload: UserPayload) -> dict:
         connection.execute(
             insert(users).values(
                 id=user_id,
-                organization_id=actor["organization_id"],
+                organization_id=target_user["organization_id"],
                 area_id=area_id,
                 name=name,
                 username=username,
@@ -553,7 +620,11 @@ def update_user(request: Request, user_id: str, payload: UserUpdatePayload) -> d
         values["username"] = username
         values["email"] = local_email_for_username(username)
     if payload.role is not None:
+        if payload.role == "owner":
+            raise HTTPException(status_code=400, detail="No se puede asignar el rol creador desde el panel")
         values["role"] = payload.role
+    if payload.organization_id is not None and is_owner(actor):
+        values["organization_id"] = payload.organization_id
     if payload.area_id is not None:
         values["area_id"] = payload.area_id
     if payload.password:
@@ -565,12 +636,20 @@ def update_user(request: Request, user_id: str, payload: UserUpdatePayload) -> d
     values["updated_at"] = func.now()
 
     with scoped_connection(request) as (connection, user):
+        target_user = dict(user)
+        if "organization_id" in values:
+            organization_row = connection.execute(
+                select(organizations.c.id).where(organizations.c.id == values["organization_id"])
+            ).first()
+            if not organization_row:
+                raise HTTPException(status_code=400, detail="Hospital no valido")
+            target_user["organization_id"] = values["organization_id"]
         if "area_id" in values:
-            values["area_id"] = validate_area_for_user(connection, user, values["area_id"])
+            values["area_id"] = validate_area_for_user(connection, target_user, values["area_id"])
         if "username" in values:
             duplicate = connection.execute(
                 select(users.c.id)
-                .where(users.c.organization_id == actor["organization_id"])
+                .where(users.c.organization_id == target_user["organization_id"])
                 .where(users.c.username == values["username"])
                 .where(users.c.id != user_id)
             ).first()
@@ -582,7 +661,7 @@ def update_user(request: Request, user_id: str, payload: UserUpdatePayload) -> d
         result = connection.execute(
             update(users)
             .where(users.c.id == user_id)
-            .where(users.c.organization_id == actor["organization_id"])
+            .where(text("1 = 1") if is_owner(actor) else users.c.organization_id == actor["organization_id"])
             .values(**values)
         )
         if result.rowcount == 0:
@@ -601,7 +680,7 @@ def delete_user(request: Request, user_id: str) -> dict:
         result = connection.execute(
             delete(users)
             .where(users.c.id == user_id)
-            .where(users.c.organization_id == actor["organization_id"])
+            .where(text("1 = 1") if is_owner(actor) else users.c.organization_id == actor["organization_id"])
         )
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
@@ -611,20 +690,39 @@ def delete_user(request: Request, user_id: str) -> dict:
 @app.get("/api/organizations")
 def get_organizations(request: Request) -> list[dict]:
     with scoped_connection(request) as (connection, user):
-        row = connection.execute(
-            select(organizations).where(organizations.c.id == user["organization_id"])
+        query = select(organizations).order_by(organizations.c.name)
+        if not is_owner(user):
+            query = query.where(organizations.c.id == user["organization_id"])
+        rows = connection.execute(query).fetchall()
+    return [normalize_organization(row) for row in rows]
+
+
+@app.post("/api/organizations", status_code=201)
+def create_organization(request: Request, payload: OrganizationPayload) -> dict:
+    require_role(request, "owner")
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="El nombre del hospital es requerido")
+
+    with get_engine().begin() as connection:
+        duplicate = connection.execute(
+            select(organizations.c.id).where(func.lower(organizations.c.name) == name.lower())
         ).first()
-    return [normalize_organization(row)] if row else []
+        if duplicate:
+            raise HTTPException(status_code=400, detail="Ya existe un hospital con ese nombre")
+        organization_id = str(uuid4())
+        connection.execute(insert(organizations).values(id=organization_id, name=name))
+        row = connection.execute(select(organizations).where(organizations.c.id == organization_id)).first()
+    return normalize_organization(row)
 
 
 @app.get("/api/areas")
 def get_areas(request: Request) -> list[dict]:
     with scoped_connection(request) as (connection, user):
-        rows = connection.execute(
-            select(areas)
-            .where(areas.c.organization_id == user["organization_id"])
-            .order_by(areas.c.name)
-        ).fetchall()
+        query = select(areas).order_by(areas.c.name)
+        if user.get("organization_id"):
+            query = query.where(areas.c.organization_id == user["organization_id"])
+        rows = connection.execute(query).fetchall()
     return [normalize_area(row) for row in rows]
 
 
@@ -636,16 +734,22 @@ def create_area(request: Request, payload: AreaPayload) -> dict:
         raise HTTPException(status_code=400, detail="El nombre del area es requerido")
 
     with scoped_connection(request) as (connection, _user):
+        organization_id = payload.organization_id if is_owner(user) and payload.organization_id else _user["organization_id"]
+        organization_row = connection.execute(
+            select(organizations.c.id).where(organizations.c.id == organization_id)
+        ).first()
+        if not organization_row:
+            raise HTTPException(status_code=400, detail="Hospital no valido")
         duplicate = connection.execute(
             select(areas.c.id)
-            .where(areas.c.organization_id == user["organization_id"])
+            .where(areas.c.organization_id == organization_id)
             .where(func.lower(areas.c.name) == name.lower())
         ).first()
         if duplicate:
             raise HTTPException(status_code=400, detail="Ya existe un area con ese nombre")
         area_id = str(uuid4())
         connection.execute(
-            insert(areas).values(id=area_id, organization_id=user["organization_id"], name=name)
+            insert(areas).values(id=area_id, organization_id=organization_id, name=name)
         )
         row = connection.execute(select(areas).where(areas.c.id == area_id)).first()
     return normalize_area(row)
@@ -685,7 +789,7 @@ def get_material_lists(request: Request) -> list[dict]:
 
 @app.post("/api/material-lists", status_code=201)
 def create_material_list(request: Request, payload: MaterialListPayload) -> dict:
-    user = require_role(request, "admin", "supervisor")
+    require_role(request, "admin", "supervisor")
     list_id = str(uuid4())
     name = payload.name.strip()
     if not name:
@@ -702,7 +806,7 @@ def create_material_list(request: Request, payload: MaterialListPayload) -> dict
         ).first()
         if duplicate:
             raise HTTPException(status_code=400, detail="A list with this name already exists")
-        connection.execute(insert(material_lists).values(id=list_id, name=name, **scope_values(user)))
+        connection.execute(insert(material_lists).values(id=list_id, name=name, **scope_values(scoped_user)))
         row = connection.execute(select(material_lists).where(material_lists.c.id == list_id)).first()
 
     return normalize_material_list(row)
@@ -710,13 +814,13 @@ def create_material_list(request: Request, payload: MaterialListPayload) -> dict
 
 @app.delete("/api/material-lists/{list_id}")
 def delete_material_list(request: Request, list_id: str) -> dict:
-    user = require_role(request, "admin")
-    with scoped_connection(request) as (connection, _user):
+    require_role(request, "admin")
+    with scoped_connection(request) as (connection, user):
         connection.execute(delete(custom_materials).where(custom_materials.c.list_id == list_id))
         result = connection.execute(
             delete(material_lists)
             .where(material_lists.c.id == list_id)
-            .where(material_lists.c.organization_id == user["organization_id"])
+            .where(scope_condition(material_lists, user))
         )
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="List not found")
@@ -725,7 +829,7 @@ def delete_material_list(request: Request, list_id: str) -> dict:
 
 @app.post("/api/material-lists/{list_id}/materials", status_code=201)
 def create_custom_material(request: Request, list_id: str, payload: MaterialPayload) -> dict:
-    user = require_role(request, "admin", "supervisor")
+    require_role(request, "admin", "supervisor")
     material_id = payload.id or str(uuid4())
     name = payload.name.strip()
     if not name:
@@ -745,7 +849,7 @@ def create_custom_material(request: Request, list_id: str, payload: MaterialPayl
         connection.execute(
             insert(custom_materials).values(
                 id=material_id,
-                **scope_values(user),
+                **scope_values(scoped_user),
                 list_id=list_id,
                 name=name,
                 existing=payload.existing,
@@ -874,14 +978,14 @@ def delete_custom_material(request: Request, list_id: str, material_id: str) -> 
 
 @app.post("/api/materials/{material_type}", status_code=201)
 def create_material(request: Request, material_type: MaterialType, payload: MaterialPayload) -> dict:
-    user = require_role(request, "admin", "supervisor")
+    require_role(request, "admin", "supervisor")
     table = table_for_type(material_type)
     material_id = payload.id or str(uuid4())
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Material name is required")
 
-    with scoped_connection(request) as (connection, _user):
+    with scoped_connection(request) as (connection, user):
         next_order = connection.execute(
             select(func.coalesce(func.max(table.c.order_index), -1) + 1)
             .where(table.c.organization_id == user["organization_id"])
@@ -1057,7 +1161,7 @@ def get_reports(request: Request) -> list[dict]:
 
 @app.post("/api/reports", status_code=201)
 def create_report(request: Request, payload: ReportPayload) -> dict:
-    user = require_role(request, "admin", "supervisor", "nurse")
+    require_role(request, "admin", "supervisor", "nurse")
     report_id = payload.id or str(uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
     user_name = payload.user_name.strip()
@@ -1068,7 +1172,7 @@ def create_report(request: Request, payload: ReportPayload) -> dict:
 
     normalized = normalize_payload_differences(payload)
 
-    with scoped_connection(request) as (connection, _user):
+    with scoped_connection(request) as (connection, user):
         connection.execute(
             insert(reports).values(
                 id=report_id,
