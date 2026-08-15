@@ -157,12 +157,47 @@ def normalize_user(row) -> dict:
 
 
 def is_expired(value) -> bool:
-    expires_at = value
-    if isinstance(expires_at, str):
-        expires_at = datetime.fromisoformat(expires_at)
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    expires_at = parse_datetime(value)
+    if not expires_at:
+        return True
     return expires_at <= datetime.now(timezone.utc)
+
+
+def parse_datetime(value) -> datetime | None:
+    if not value:
+        return None
+    parsed = value
+    if isinstance(parsed, str):
+        try:
+            parsed = datetime.fromisoformat(parsed.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if not isinstance(parsed, datetime):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def report_is_in_nurse_edit_window(report_row) -> bool:
+    report = row_to_dict(report_row)
+    report_time = parse_datetime(report.get("created_at")) or parse_datetime(report.get("timestamp"))
+    if not report_time:
+        return False
+    age = datetime.now(timezone.utc) - report_time
+    return timedelta(0) <= age <= timedelta(hours=12)
+
+
+def require_report_edit_permission(request: Request, report_row) -> dict:
+    user = current_user(request)
+    if user["role"] in {"admin", "supervisor"}:
+        return user
+    if user["role"] == "nurse" and report_is_in_nurse_edit_window(report_row):
+        return user
+    raise HTTPException(
+        status_code=403,
+        detail="Enfermeria solo puede editar reportes durante las primeras 12 horas",
+    )
 
 
 def authenticate_token(authorization: str | None) -> dict | None:
@@ -857,7 +892,6 @@ def create_report(request: Request, payload: ReportPayload) -> dict:
 
 @app.put("/api/reports/{report_id}")
 def update_report(request: Request, report_id: str, payload: ReportPayload) -> dict:
-    require_role(request, "admin", "supervisor")
     user_name = payload.user_name.strip()
     shift = payload.shift.strip()
     duration_seconds = max(0, payload.duration_seconds or 0)
@@ -867,6 +901,12 @@ def update_report(request: Request, report_id: str, payload: ReportPayload) -> d
     normalized = normalize_payload_differences(payload)
 
     with get_engine().begin() as connection:
+        existing_report = connection.execute(select(reports).where(reports.c.id == report_id)).first()
+        if not existing_report:
+            raise HTTPException(status_code=404, detail="Report not found")
+
+        require_report_edit_permission(request, existing_report)
+
         result = connection.execute(
             update(reports)
             .where(reports.c.id == report_id)

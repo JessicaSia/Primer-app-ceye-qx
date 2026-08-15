@@ -293,9 +293,7 @@ const canDeleteData = computed(() => currentUser.value?.role === 'admin');
 const canSaveReports = computed(() =>
   ['admin', 'supervisor', 'nurse'].includes(currentUser.value?.role || '')
 );
-const canEditReports = computed(() =>
-  currentUser.value?.role === 'admin' || currentUser.value?.role === 'supervisor'
-);
+const reportEditWindowMs = 12 * 60 * 60 * 1000;
 
 onMounted(() => {
   loadSession();
@@ -673,6 +671,21 @@ function clearStockMaterialSearch() {
 function getReportDate(timestamp: string) {
   const date = new Date(timestamp);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isReportInNurseEditWindow(report: Report) {
+  const reportDate = getReportDate(report.timestamp);
+  if (!reportDate) return false;
+
+  const age = Date.now() - reportDate.getTime();
+  return age >= 0 && age <= reportEditWindowMs;
+}
+
+function canEditReport(report: Report) {
+  if (currentUser.value?.role === 'admin' || currentUser.value?.role === 'supervisor') {
+    return true;
+  }
+  return currentUser.value?.role === 'nurse' && isReportInNurseEditWindow(report);
 }
 
 function formatReportTimestamp(timestamp: string) {
@@ -1708,7 +1721,7 @@ async function printReport(reportId: string) {
           <button @click="closeSelectedReport">Ver lista de reportes</button>
           <div class="report-detail-actions">
             <button
-              v-if="editingReportId !== selectedReport.id && canEditReports"
+              v-if="editingReportId !== selectedReport.id && canEditReport(selectedReport)"
               class="info-button"
               @click="startReportEdit(selectedReport)"
             >
