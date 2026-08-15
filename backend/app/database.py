@@ -1,5 +1,6 @@
 import os
 import hashlib
+import re
 import secrets
 from pathlib import Path
 
@@ -105,6 +106,7 @@ users = Table(
     metadata,
     Column("id", String, primary_key=True),
     Column("name", String, nullable=False),
+    Column("username", String, nullable=False, unique=True),
     Column("email", String, nullable=False, unique=True),
     Column("password_hash", String, nullable=False),
     Column("password_salt", String, nullable=False),
@@ -160,8 +162,34 @@ def init_db() -> None:
 
 def migrate_existing_tables() -> None:
     inspector = inspect(engine)
+    table_names = inspector.get_table_names()
     with engine.begin() as connection:
-        if "reports" in inspector.get_table_names():
+        if "users" in table_names:
+            user_columns = {column["name"] for column in inspector.get_columns("users")}
+            if "username" not in user_columns:
+                connection.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR"))
+                rows = connection.execute(text("SELECT id, name, email FROM users ORDER BY created_at")).fetchall()
+                used_usernames = set()
+                for row in rows:
+                    data = row._mapping
+                    base_value = (data["email"] or data["name"] or "usuario").split("@")[0]
+                    username = re.sub(r"[^A-Za-z0-9]", "", base_value).lower() or "usuario"
+                    original_username = username
+                    suffix = 2
+                    while username in used_usernames:
+                        username = f"{original_username}{suffix}"
+                        suffix += 1
+                    used_usernames.add(username)
+                    connection.execute(
+                        text("UPDATE users SET username = :username WHERE id = :id"),
+                        {"username": username, "id": data["id"]},
+                    )
+                if engine.dialect.name == "postgresql":
+                    connection.execute(text("ALTER TABLE users ALTER COLUMN username SET NOT NULL"))
+
+            connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username)"))
+
+        if "reports" in table_names:
             report_columns = {column["name"] for column in inspector.get_columns("reports")}
             if "user_name" not in report_columns:
                 connection.execute(
@@ -278,6 +306,7 @@ def seed_data() -> None:
                 users.insert().values(
                     id="admin-default",
                     name=os.getenv("DEFAULT_ADMIN_NAME", "Administrador"),
+                    username=os.getenv("DEFAULT_ADMIN_USERNAME", "admin").lower(),
                     email=os.getenv("DEFAULT_ADMIN_EMAIL", "admin@ceye.local").lower(),
                     password_hash=password_hash,
                     password_salt=salt,

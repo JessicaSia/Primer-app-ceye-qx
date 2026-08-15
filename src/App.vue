@@ -77,18 +77,18 @@ interface CountAdditions {
 
 const view = ref<View>('home');
 const currentUser = ref<AuthUser | null>(null);
-const loginEmail = ref('');
+const loginUsername = ref('');
 const loginPassword = ref('');
 const loginLoading = ref(false);
 const usersList = ref<AuthUser[]>([]);
 const usersLoading = ref(false);
 const newUserName = ref('');
-const newUserEmail = ref('');
+const newUsername = ref('');
 const newUserPassword = ref('');
 const newUserRole = ref<UserRole>('nurse');
 const editingUserId = ref<string | null>(null);
 const editingUserName = ref('');
-const editingUserEmail = ref('');
+const editingUsername = ref('');
 const editingUserRole = ref<UserRole>('nurse');
 const editingUserPassword = ref('');
 const materialsGas = ref<Material[]>([]);
@@ -337,14 +337,14 @@ async function loadSession() {
 }
 
 async function handleLogin() {
-  if (!loginEmail.value.trim() || !loginPassword.value) {
-    showNotification('Escribe tu correo y contrasena.', 'error');
+  if (!loginUsername.value.trim() || !loginPassword.value) {
+    showNotification('Escribe tu usuario y contrasena.', 'error');
     return;
   }
 
   loginLoading.value = true;
   try {
-    const session = await login(loginEmail.value, loginPassword.value);
+    const session = await login(loginUsername.value, loginPassword.value);
     setAuthToken(session.token);
     currentUser.value = session.user;
     loginPassword.value = '';
@@ -491,21 +491,21 @@ function roleLabel(role: UserRole) {
 }
 
 async function createAppUser() {
-  if (!newUserName.value.trim() || !newUserEmail.value.trim() || !newUserPassword.value) {
-    showNotification('Completa nombre, correo y contrasena.', 'error');
+  if (!newUserName.value.trim() || !newUsername.value.trim() || !newUserPassword.value) {
+    showNotification('Completa nombre, usuario y contrasena.', 'error');
     return;
   }
 
   try {
     const created = await createUser({
       name: newUserName.value.trim(),
-      email: newUserEmail.value.trim(),
+      username: newUsername.value.trim(),
       password: newUserPassword.value,
       role: newUserRole.value,
     });
     usersList.value = [...usersList.value, created];
     newUserName.value = '';
-    newUserEmail.value = '';
+    newUsername.value = '';
     newUserPassword.value = '';
     newUserRole.value = 'nurse';
     showNotification(`Usuario "${created.name}" creado correctamente.`);
@@ -518,7 +518,7 @@ async function createAppUser() {
 function startUserEdit(user: AuthUser) {
   editingUserId.value = user.id;
   editingUserName.value = user.name;
-  editingUserEmail.value = user.email;
+  editingUsername.value = user.username;
   editingUserRole.value = user.role;
   editingUserPassword.value = '';
 }
@@ -526,16 +526,16 @@ function startUserEdit(user: AuthUser) {
 function cancelUserEdit() {
   editingUserId.value = null;
   editingUserName.value = '';
-  editingUserEmail.value = '';
+  editingUsername.value = '';
   editingUserPassword.value = '';
   editingUserRole.value = 'nurse';
 }
 
 async function saveUserEdit(userId: string) {
   try {
-    const payload: Partial<{ name: string; email: string; password: string; role: UserRole }> = {
+    const payload: Partial<{ name: string; username: string; password: string; role: UserRole }> = {
       name: editingUserName.value.trim(),
-      email: editingUserEmail.value.trim(),
+      username: editingUsername.value.trim(),
       role: editingUserRole.value,
     };
     if (editingUserPassword.value) {
@@ -1250,7 +1250,14 @@ async function printReport(reportId: string) {
       <span class="eyebrow">Acceso seguro</span>
       <h1>Ceye Qx</h1>
       <p>Inicia sesion con tu cuenta para ver inventario, reportes y permisos de tu rol.</p>
-      <input v-model="loginEmail" type="email" autocomplete="email" placeholder="Correo" />
+      <input
+        v-model="loginUsername"
+        type="text"
+        autocomplete="username"
+        inputmode="text"
+        pattern="[A-Za-z0-9]+"
+        placeholder="Nombre de usuario"
+      />
       <input
         v-model="loginPassword"
         type="password"
@@ -1624,7 +1631,12 @@ async function printReport(reportId: string) {
       <div class="section-block user-form">
         <h2>Crear cuenta</h2>
         <input v-model="newUserName" type="text" placeholder="Nombre completo" />
-        <input v-model="newUserEmail" type="email" placeholder="Correo" />
+        <input
+          v-model="newUsername"
+          type="text"
+          pattern="[A-Za-z0-9]+"
+          placeholder="Nombre de usuario"
+        />
         <input v-model="newUserPassword" type="password" placeholder="Contrasena temporal" />
         <select v-model="newUserRole">
           <option v-for="option in roleOptions" :key="option.value" :value="option.value">
@@ -1645,7 +1657,12 @@ async function printReport(reportId: string) {
           <article v-for="user in usersList" :key="user.id" class="user-card">
             <div v-if="editingUserId === user.id" class="edit-form user-edit-form">
               <input v-model="editingUserName" type="text" placeholder="Nombre" />
-              <input v-model="editingUserEmail" type="email" placeholder="Correo" />
+              <input
+                v-model="editingUsername"
+                type="text"
+                pattern="[A-Za-z0-9]+"
+                placeholder="Nombre de usuario"
+              />
               <select v-model="editingUserRole">
                 <option v-for="option in roleOptions" :key="option.value" :value="option.value">
                   {{ option.label }}
@@ -1658,7 +1675,7 @@ async function printReport(reportId: string) {
             <div v-else class="user-card-content">
               <div>
                 <strong>{{ user.name }}</strong>
-                <span>{{ user.email }}</span>
+                <span>@{{ user.username }}</span>
               </div>
               <span class="role-pill">{{ roleLabel(user.role) }}</span>
               <button class="info-button" @click="startUserEdit(user)">Editar</button>

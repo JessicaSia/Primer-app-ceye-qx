@@ -1,5 +1,6 @@
 import os
 import hashlib
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Literal
@@ -103,20 +104,20 @@ class ReportPayload(BaseModel):
 
 
 class LoginPayload(BaseModel):
-    email: str = Field(min_length=3)
+    username: str = Field(min_length=3)
     password: str = Field(min_length=1)
 
 
 class UserPayload(BaseModel):
     name: str = Field(min_length=1)
-    email: str = Field(min_length=3)
+    username: str = Field(min_length=3)
     password: str = Field(min_length=6)
     role: UserRole
 
 
 class UserUpdatePayload(BaseModel):
     name: str | None = None
-    email: str | None = None
+    username: str | None = None
     password: str | None = None
     role: UserRole | None = None
 
@@ -143,11 +144,26 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def normalize_username(value: str) -> str:
+    username = value.strip().lower()
+    if not re.fullmatch(r"[a-z0-9]+", username):
+        raise HTTPException(
+            status_code=400,
+            detail="El nombre de usuario solo puede usar letras y numeros",
+        )
+    return username
+
+
+def local_email_for_username(username: str) -> str:
+    return f"{username}@ceye.local"
+
+
 def normalize_user(row) -> dict:
     user = row_to_dict(row)
     return {
         "id": user["id"],
         "name": user["name"],
+        "username": user.get("username") or (user["email"] or "").split("@")[0],
         "email": user["email"],
         "role": user["role"],
         "role_label": ROLE_LABELS.get(user["role"], user["role"]),
@@ -356,15 +372,15 @@ def health() -> dict:
 
 @app.post("/api/auth/login")
 def login(payload: LoginPayload) -> dict:
-    email = payload.email.strip().lower()
+    username = normalize_username(payload.username)
     with get_engine().begin() as connection:
-        user_row = connection.execute(select(users).where(users.c.email == email)).first()
+        user_row = connection.execute(select(users).where(users.c.username == username)).first()
         if not user_row:
-            raise HTTPException(status_code=401, detail="Correo o contrasena incorrectos")
+            raise HTTPException(status_code=401, detail="Usuario o contrasena incorrectos")
 
         user_data = row_to_dict(user_row)
         if not verify_password(payload.password, user_data["password_salt"], user_data["password_hash"]):
-            raise HTTPException(status_code=401, detail="Correo o contrasena incorrectos")
+            raise HTTPException(status_code=401, detail="Usuario o contrasena incorrectos")
 
         token = secrets.token_urlsafe(32)
         connection.execute(
@@ -404,7 +420,8 @@ def get_users(request: Request) -> list[dict]:
 @app.post("/api/users", status_code=201)
 def create_user(request: Request, payload: UserPayload) -> dict:
     require_role(request, "admin")
-    email = payload.email.strip().lower()
+    username = normalize_username(payload.username)
+    email = local_email_for_username(username)
     name = payload.name.strip()
     if payload.role not in ALL_ROLES:
         raise HTTPException(status_code=400, detail="Rol invalido")
@@ -412,13 +429,17 @@ def create_user(request: Request, payload: UserPayload) -> dict:
     salt = secrets.token_hex(16)
     user_id = str(uuid4())
     with get_engine().begin() as connection:
-        duplicate = connection.execute(select(users.c.id).where(users.c.email == email)).first()
+        duplicate = connection.execute(select(users.c.id).where(users.c.username == username)).first()
         if duplicate:
-            raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese correo")
+            raise HTTPException(
+                status_code=400,
+                detail="Nombre de usuario ya existente, por favor elige otro",
+            )
         connection.execute(
             insert(users).values(
                 id=user_id,
                 name=name,
+                username=username,
                 email=email,
                 password_hash=hash_password(payload.password, salt),
                 password_salt=salt,
@@ -435,8 +456,10 @@ def update_user(request: Request, user_id: str, payload: UserUpdatePayload) -> d
     values = {}
     if payload.name is not None:
         values["name"] = payload.name.strip()
-    if payload.email is not None:
-        values["email"] = payload.email.strip().lower()
+    if payload.username is not None:
+        username = normalize_username(payload.username)
+        values["username"] = username
+        values["email"] = local_email_for_username(username)
     if payload.role is not None:
         values["role"] = payload.role
     if payload.password:
@@ -448,12 +471,17 @@ def update_user(request: Request, user_id: str, payload: UserUpdatePayload) -> d
     values["updated_at"] = func.now()
 
     with get_engine().begin() as connection:
-        if "email" in values:
+        if "username" in values:
             duplicate = connection.execute(
-                select(users.c.id).where(users.c.email == values["email"]).where(users.c.id != user_id)
+                select(users.c.id)
+                .where(users.c.username == values["username"])
+                .where(users.c.id != user_id)
             ).first()
             if duplicate:
-                raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese correo")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Nombre de usuario ya existente, por favor elige otro",
+                )
         result = connection.execute(update(users).where(users.c.id == user_id).values(**values))
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")

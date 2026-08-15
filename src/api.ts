@@ -10,7 +10,8 @@ export type UserRole = 'admin' | 'nurse' | 'supervisor' | 'readonly';
 export interface AuthUser {
   id: string;
   name: string;
-  email: string;
+  username: string;
+  email?: string;
   role: UserRole;
   role_label: string;
 }
@@ -80,10 +81,10 @@ export function clearAuthToken() {
   }
 }
 
-export const login = (email: string, password: string) =>
+export const login = (username: string, password: string) =>
   request<{ token: string; user: AuthUser }>('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ username, password }),
   });
 
 export const getMe = () => request<AuthUser>('/auth/me');
@@ -98,7 +99,7 @@ export const getUsers = () => request<AuthUser[]>('/users');
 
 export const createUser = (payload: {
   name: string;
-  email: string;
+  username: string;
   password: string;
   role: UserRole;
 }) =>
@@ -109,7 +110,7 @@ export const createUser = (payload: {
 
 export const updateUser = (
   id: string,
-  payload: Partial<{ name: string; email: string; password: string; role: UserRole }>
+  payload: Partial<{ name: string; username: string; password: string; role: UserRole }>
 ) =>
   request<AuthUser>(`/users/${id}`, {
     method: 'PUT',
