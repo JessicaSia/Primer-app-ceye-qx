@@ -309,27 +309,106 @@ main > section {
 }
 
 .dashboard-hero {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  padding: 26px;
-  background: var(--panel);
+  gap: 24px;
+  padding: 30px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 254, 255, 0.96)),
+    radial-gradient(circle at 86% 18%, rgba(183, 229, 0, 0.14), transparent 28%),
+    radial-gradient(circle at 72% 82%, rgba(6, 174, 196, 0.16), transparent 30%);
   border: 1px solid var(--line);
   border-radius: 8px;
-  box-shadow: 0 16px 38px rgba(6, 174, 196, 0.10);
+  box-shadow: 0 18px 42px rgba(6, 174, 196, 0.13);
   animation: riseIn 0.38s ease-out both;
+}
+
+.dashboard-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(90deg, rgba(6, 174, 196, 0.08) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(6, 174, 196, 0.06) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: linear-gradient(90deg, transparent, #000 22%, #000 76%, transparent);
+  opacity: 0.38;
+  pointer-events: none;
+  animation: dashboardGridDrift 9s linear infinite;
+}
+
+.dashboard-hero::after {
+  content: "";
+  position: absolute;
+  top: -46px;
+  right: -42px;
+  width: 220px;
+  height: 220px;
+  border: 1px solid rgba(6, 174, 196, 0.22);
+  border-radius: 50%;
+  opacity: 0.42;
+  pointer-events: none;
+  animation: dashboardRing 7s ease-in-out infinite;
+}
+
+.dashboard-identity,
+.dashboard-actions {
+  position: relative;
+  z-index: 1;
+}
+
+.dashboard-identity {
+  display: grid;
+  gap: 12px;
+  max-width: 760px;
 }
 
 .dashboard-hero h1 {
   text-align: left;
-  margin: 6px 0 8px;
+  margin: 0;
+  max-width: 780px;
+  color: #12343d;
+  font-size: clamp(34px, 5vw, 64px);
+  letter-spacing: 0;
+  line-height: 0.98;
 }
 
 .dashboard-hero p {
   margin: 0;
   color: var(--muted);
   font-weight: 700;
+  max-width: 520px;
+}
+
+.dashboard-location-card {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(6, 174, 196, 0.22);
+  border-radius: 8px;
+  box-shadow: 0 14px 28px rgba(6, 174, 196, 0.10);
+  animation: fadeSlideIn 0.44s ease-out both;
+  animation-delay: 0.08s;
+}
+
+.dashboard-location-card span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.dashboard-location-card strong {
+  color: #063f4a;
+  font-size: 18px;
+  font-weight: 900;
 }
 
 .eyebrow {
@@ -341,9 +420,24 @@ main > section {
 
 .dashboard-actions {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  min-width: min(460px, 100%);
+}
+
+.dashboard-actions button {
+  min-width: 178px;
+  margin: 0;
+  animation: actionButtonIn 0.42s ease-out both;
+}
+
+.dashboard-actions button:nth-child(2) {
+  animation-delay: 0.06s;
+}
+
+.dashboard-actions button:nth-child(3) {
+  animation-delay: 0.12s;
 }
 
 .dashboard-stats {
@@ -820,6 +914,27 @@ main > section {
   to {
     opacity: 1;
     transform: rotate(0) scale(1);
+  }
+}
+
+@keyframes dashboardGridDrift {
+  from {
+    background-position: 0 0, 0 0;
+  }
+  to {
+    background-position: 34px 34px, 34px 34px;
+  }
+}
+
+@keyframes dashboardRing {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.34;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.52;
   }
 }
 
@@ -1601,12 +1716,27 @@ table tbody tr:hover {
     padding: 18px;
   }
 
+  .dashboard-identity {
+    max-width: none;
+  }
+
   .dashboard-hero h1 {
     font-size: 27px;
   }
 
   .dashboard-actions {
     justify-content: stretch;
+    min-width: 0;
+  }
+
+  .dashboard-actions button {
+    flex: 1 1 180px;
+  }
+
+  .dashboard-location-card {
+    width: 100%;
+    grid-template-columns: 1fr;
+    gap: 2px;
   }
 
   .stat-card,
@@ -1774,11 +1904,20 @@ table tbody tr:hover {
   }
 
   .dashboard-hero h1 {
-    font-size: 24px;
+    font-size: 25px;
   }
 
   .dashboard-hero p {
     font-size: 14px;
+  }
+
+  .dashboard-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-actions button {
+    width: 100%;
   }
 
   .dashboard-stats {

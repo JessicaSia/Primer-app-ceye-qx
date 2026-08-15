@@ -1412,10 +1412,14 @@ async function printReport(reportId: string) {
 
       <section v-if="view === 'home'" class="dashboard">
         <div class="dashboard-hero">
-          <div>
+          <div class="dashboard-identity">
             <span class="eyebrow">Panel principal</span>
             <h1>{{ currentOrganizationName }}</h1>
-            <p>Inventario y reportes de {{ currentAreaName }}.</p>
+            <div class="dashboard-location-card">
+              <span>Nombre de sede</span>
+              <strong>{{ currentAreaName }}</strong>
+            </div>
+            <p>Inventario, conteos y reportes operativos del área asignada.</p>
           </div>
           <div class="dashboard-actions">
             <button v-if="canSaveReports" @click="setView('select')">Nuevo Conteo</button>

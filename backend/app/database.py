@@ -27,8 +27,8 @@ metadata = MetaData()
 
 DEFAULT_ORGANIZATION_ID = "org-default"
 DEFAULT_AREA_ID = "area-default"
-DEFAULT_ORGANIZATION_NAME = os.getenv("DEFAULT_ORGANIZATION_NAME", "AUna galerias")
-DEFAULT_AREA_NAME = os.getenv("DEFAULT_AREA_NAME", "ceye quirofano")
+DEFAULT_ORGANIZATION_NAME = os.getenv("DEFAULT_ORGANIZATION_NAME", "AUNA DOCTORS HOSPITAL")
+DEFAULT_AREA_NAME = os.getenv("DEFAULT_AREA_NAME", "Galerias")
 
 organizations = Table(
     "organizations",
