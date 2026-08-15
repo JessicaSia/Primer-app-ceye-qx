@@ -312,21 +312,26 @@ onUnmounted(() => {
 
 async function loadData() {
   try {
-    const [gasData, vaporData, customListData, reportData, areaData] = await Promise.all([
+    const [gasData, vaporData, customListData, reportData] = await Promise.all([
       getMaterialsGas(),
       getMaterialsVapor(),
       getMaterialLists(),
       getReports(),
-      getAreas(),
     ]);
     materialsGas.value = gasData;
     materialsVapor.value = vaporData;
     customMaterialLists.value = customListData;
     reports.value = reportData;
-    areasList.value = areaData;
   } catch (error) {
     console.error(error);
-    showNotification('Error cargando datos', 'error');
+    showNotification(getErrorMessage(error, 'Error cargando datos'), 'error');
+  }
+
+  try {
+    areasList.value = await getAreas();
+  } catch (error) {
+    console.error(error);
+    showNotification(getErrorMessage(error, 'Error cargando areas'), 'error');
   }
 }
 
@@ -487,15 +492,19 @@ async function loadUsersList() {
   if (!canManageUsers.value) return;
   usersLoading.value = true;
   try {
-    const [usersData, areasData] = await Promise.all([getUsers(), getAreas()]);
-    usersList.value = usersData;
-    areasList.value = areasData;
-    if (!newUserAreaId.value && areasData[0]) {
-      newUserAreaId.value = areasData[0].id;
+    usersList.value = await getUsers();
+    try {
+      areasList.value = await getAreas();
+    } catch (areaError) {
+      console.error(areaError);
+      showNotification(getErrorMessage(areaError, 'Error cargando areas'), 'error');
+    }
+    if (!newUserAreaId.value && areasList.value[0]) {
+      newUserAreaId.value = areasList.value[0].id;
     }
   } catch (error) {
     console.error(error);
-    showNotification('Error cargando usuarios.', 'error');
+    showNotification(getErrorMessage(error, 'Error cargando usuarios.'), 'error');
   } finally {
     usersLoading.value = false;
   }
