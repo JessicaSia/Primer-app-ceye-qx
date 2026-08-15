@@ -6,6 +6,7 @@ import {
   addCustomMaterial,
   clearAuthToken,
   changeMaterialType,
+  createArea,
   createMaterialList,
   createReport,
   createUser,
@@ -14,6 +15,7 @@ import {
   deleteMaterialVapor,
   deleteUser,
   getAuthToken,
+  getAreas,
   getMaterialLists,
   getMaterialsGas,
   getMaterialsVapor,
@@ -24,6 +26,7 @@ import {
   logout,
   moveCustomMaterial,
   setAuthToken,
+  type Area,
   type AuthUser,
   type UserRole,
   updateMaterialOrder,
@@ -81,15 +84,19 @@ const loginUsername = ref('');
 const loginPassword = ref('');
 const loginLoading = ref(false);
 const usersList = ref<AuthUser[]>([]);
+const areasList = ref<Area[]>([]);
 const usersLoading = ref(false);
 const newUserName = ref('');
 const newUsername = ref('');
 const newUserPassword = ref('');
 const newUserRole = ref<UserRole>('nurse');
+const newUserAreaId = ref('');
+const newAreaName = ref('');
 const editingUserId = ref<string | null>(null);
 const editingUserName = ref('');
 const editingUsername = ref('');
 const editingUserRole = ref<UserRole>('nurse');
+const editingUserAreaId = ref('');
 const editingUserPassword = ref('');
 const materialsGas = ref<Material[]>([]);
 const materialsVapor = ref<Material[]>([]);
@@ -305,16 +312,18 @@ onUnmounted(() => {
 
 async function loadData() {
   try {
-    const [gasData, vaporData, customListData, reportData] = await Promise.all([
+    const [gasData, vaporData, customListData, reportData, areaData] = await Promise.all([
       getMaterialsGas(),
       getMaterialsVapor(),
       getMaterialLists(),
       getReports(),
+      getAreas(),
     ]);
     materialsGas.value = gasData;
     materialsVapor.value = vaporData;
     customMaterialLists.value = customListData;
     reports.value = reportData;
+    areasList.value = areaData;
   } catch (error) {
     console.error(error);
     showNotification('Error cargando datos', 'error');
@@ -368,6 +377,7 @@ async function handleLogout() {
   materialsVapor.value = [];
   customMaterialLists.value = [];
   reports.value = [];
+  areasList.value = [];
 
   try {
     if (token) {
@@ -477,7 +487,12 @@ async function loadUsersList() {
   if (!canManageUsers.value) return;
   usersLoading.value = true;
   try {
-    usersList.value = await getUsers();
+    const [usersData, areasData] = await Promise.all([getUsers(), getAreas()]);
+    usersList.value = usersData;
+    areasList.value = areasData;
+    if (!newUserAreaId.value && areasData[0]) {
+      newUserAreaId.value = areasData[0].id;
+    }
   } catch (error) {
     console.error(error);
     showNotification('Error cargando usuarios.', 'error');
@@ -488,6 +503,29 @@ async function loadUsersList() {
 
 function roleLabel(role: UserRole) {
   return roleOptions.find((option) => option.value === role)?.label || role;
+}
+
+function areaLabel(areaId?: string) {
+  return areasList.value.find((area) => area.id === areaId)?.name || 'Sin area';
+}
+
+async function createAppArea() {
+  const name = newAreaName.value.trim();
+  if (!name) {
+    showNotification('Escribe el nombre del area.', 'error');
+    return;
+  }
+
+  try {
+    const area = await createArea(name);
+    areasList.value = [...areasList.value, area];
+    newUserAreaId.value = area.id;
+    newAreaName.value = '';
+    showNotification(`Area "${area.name}" creada correctamente.`);
+  } catch (error) {
+    console.error(error);
+    showNotification(getErrorMessage(error, 'Error creando area'), 'error');
+  }
 }
 
 async function createAppUser() {
@@ -502,6 +540,7 @@ async function createAppUser() {
       username: newUsername.value.trim(),
       password: newUserPassword.value,
       role: newUserRole.value,
+      area_id: newUserAreaId.value || undefined,
     });
     usersList.value = [...usersList.value, created];
     newUserName.value = '';
@@ -520,6 +559,7 @@ function startUserEdit(user: AuthUser) {
   editingUserName.value = user.name;
   editingUsername.value = user.username;
   editingUserRole.value = user.role;
+  editingUserAreaId.value = user.area_id;
   editingUserPassword.value = '';
 }
 
@@ -529,14 +569,16 @@ function cancelUserEdit() {
   editingUsername.value = '';
   editingUserPassword.value = '';
   editingUserRole.value = 'nurse';
+  editingUserAreaId.value = '';
 }
 
 async function saveUserEdit(userId: string) {
   try {
-    const payload: Partial<{ name: string; username: string; password: string; role: UserRole }> = {
+    const payload: Partial<{ name: string; username: string; password: string; role: UserRole; area_id: string }> = {
       name: editingUserName.value.trim(),
       username: editingUsername.value.trim(),
       role: editingUserRole.value,
+      area_id: editingUserAreaId.value,
     };
     if (editingUserPassword.value) {
       payload.password = editingUserPassword.value;
@@ -1337,6 +1379,7 @@ async function printReport(reportId: string) {
       <div class="sidebar-user">
         <strong>{{ currentUser.name }}</strong>
         <span>{{ roleLabel(currentUser.role) }}</span>
+        <span>{{ areaLabel(currentUser.area_id) }}</span>
         <button type="button" class="ghost-button" @click.stop="handleLogout">Salir</button>
       </div>
     </aside>
@@ -1657,6 +1700,12 @@ async function printReport(reportId: string) {
       <button @click="setView('home')">Volver</button>
 
       <div class="section-block user-form">
+        <h2>Areas del hospital</h2>
+        <input v-model="newAreaName" type="text" placeholder="Nueva area" @keyup.enter="createAppArea" />
+        <button class="info-button" @click="createAppArea">Crear Area</button>
+      </div>
+
+      <div class="section-block user-form">
         <h2>Crear cuenta</h2>
         <input v-model="newUserName" type="text" placeholder="Nombre completo" />
         <input
@@ -1669,6 +1718,11 @@ async function printReport(reportId: string) {
         <select v-model="newUserRole">
           <option v-for="option in roleOptions" :key="option.value" :value="option.value">
             {{ option.label }}
+          </option>
+        </select>
+        <select v-model="newUserAreaId">
+          <option v-for="area in areasList" :key="area.id" :value="area.id">
+            {{ area.name }}
           </option>
         </select>
         <button class="success-button" @click="createAppUser">Crear Usuario</button>
@@ -1696,6 +1750,11 @@ async function printReport(reportId: string) {
                   {{ option.label }}
                 </option>
               </select>
+              <select v-model="editingUserAreaId">
+                <option v-for="area in areasList" :key="area.id" :value="area.id">
+                  {{ area.name }}
+                </option>
+              </select>
               <input v-model="editingUserPassword" type="password" placeholder="Nueva contrasena opcional" />
               <button class="success-button" @click="saveUserEdit(user.id)">Guardar</button>
               <button @click="cancelUserEdit">Cancelar</button>
@@ -1706,6 +1765,7 @@ async function printReport(reportId: string) {
                 <span>@{{ user.username }}</span>
               </div>
               <span class="role-pill">{{ roleLabel(user.role) }}</span>
+              <span class="role-pill">{{ areaLabel(user.area_id) }}</span>
               <button class="info-button" @click="startUserEdit(user)">Editar</button>
               <button
                 v-if="currentUser?.id !== user.id"

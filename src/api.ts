@@ -9,11 +9,19 @@ export type UserRole = 'admin' | 'nurse' | 'supervisor' | 'readonly';
 
 export interface AuthUser {
   id: string;
+  organization_id: string;
+  area_id: string;
   name: string;
   username: string;
   email?: string;
   role: UserRole;
   role_label: string;
+}
+
+export interface Area {
+  id: string;
+  organization_id: string;
+  name: string;
 }
 
 export interface MaterialPayload {
@@ -123,12 +131,19 @@ export const logout = (token?: string) =>
   });
 
 export const getUsers = () => request<AuthUser[]>('/users');
+export const getAreas = () => request<Area[]>('/areas');
+export const createArea = (name: string) =>
+  request<Area>('/areas', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
 
 export const createUser = (payload: {
   name: string;
   username: string;
   password: string;
   role: UserRole;
+  area_id?: string;
 }) =>
   request<AuthUser>('/users', {
     method: 'POST',
@@ -137,7 +152,7 @@ export const createUser = (payload: {
 
 export const updateUser = (
   id: string,
-  payload: Partial<{ name: string; username: string; password: string; role: UserRole }>
+  payload: Partial<{ name: string; username: string; password: string; role: UserRole; area_id: string }>
 ) =>
   request<AuthUser>(`/users/${id}`, {
     method: 'PUT',

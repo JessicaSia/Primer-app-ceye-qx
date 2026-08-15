@@ -2,6 +2,7 @@ import os
 import hashlib
 import re
 import secrets
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 from uuid import uuid4
@@ -10,14 +11,16 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, desc, func, insert, select, update
+from sqlalchemy import and_, delete, desc, func, insert, select, text, update
 
 from .database import (
+    areas,
     custom_materials,
     get_database_url,
     get_engine,
     init_db,
     material_lists,
+    organizations,
     report_differences,
     reports,
     table_for_type,
@@ -76,6 +79,10 @@ class MaterialListPayload(BaseModel):
     name: str = Field(min_length=1)
 
 
+class AreaPayload(BaseModel):
+    name: str = Field(min_length=1)
+
+
 class CustomMaterialMovePayload(MaterialPayload):
     target_list_id: str = Field(min_length=1)
 
@@ -113,6 +120,7 @@ class UserPayload(BaseModel):
     username: str = Field(min_length=3)
     password: str = Field(min_length=6)
     role: UserRole
+    area_id: str | None = None
 
 
 class UserUpdatePayload(BaseModel):
@@ -120,6 +128,7 @@ class UserUpdatePayload(BaseModel):
     username: str | None = None
     password: str | None = None
     role: UserRole | None = None
+    area_id: str | None = None
 
 
 @app.on_event("startup")
@@ -162,6 +171,8 @@ def normalize_user(row) -> dict:
     user = row_to_dict(row)
     return {
         "id": user["id"],
+        "organization_id": user.get("organization_id"),
+        "area_id": user.get("area_id"),
         "name": user["name"],
         "username": user.get("username") or (user["email"] or "").split("@")[0],
         "email": user["email"],
@@ -170,6 +181,76 @@ def normalize_user(row) -> dict:
         "created_at": user.get("created_at"),
         "updated_at": user.get("updated_at"),
     }
+
+
+def normalize_organization(row) -> dict:
+    item = row_to_dict(row)
+    return {
+        "id": item["id"],
+        "name": item["name"],
+        "created_at": item.get("created_at"),
+        "updated_at": item.get("updated_at"),
+    }
+
+
+def normalize_area(row) -> dict:
+    item = row_to_dict(row)
+    return {
+        "id": item["id"],
+        "organization_id": item["organization_id"],
+        "name": item["name"],
+        "created_at": item.get("created_at"),
+        "updated_at": item.get("updated_at"),
+    }
+
+
+def can_access_all_areas(user: dict) -> bool:
+    return user["role"] in {"admin", "supervisor"}
+
+
+def scope_condition(table, user: dict):
+    conditions = [table.c.organization_id == user["organization_id"]]
+    if not can_access_all_areas(user):
+        conditions.append(table.c.area_id == user["area_id"])
+    return and_(*conditions)
+
+
+def scope_values(user: dict) -> dict:
+    return {
+        "organization_id": user["organization_id"],
+        "area_id": user["area_id"],
+    }
+
+
+def set_rls_context(connection, user: dict) -> None:
+    if get_database_url().startswith("postgresql"):
+        connection.execute(text("SELECT set_config('app.user_id', :value, true)"), {"value": user["id"]})
+        connection.execute(text("SELECT set_config('app.role', :value, true)"), {"value": user["role"]})
+        connection.execute(
+            text("SELECT set_config('app.organization_id', :value, true)"),
+            {"value": user["organization_id"] or ""},
+        )
+        connection.execute(text("SELECT set_config('app.area_id', :value, true)"), {"value": user["area_id"] or ""})
+
+
+def validate_area_for_user(connection, user: dict, area_id: str | None) -> str:
+    selected_area_id = area_id or user["area_id"]
+    row = connection.execute(
+        select(areas)
+        .where(areas.c.id == selected_area_id)
+        .where(areas.c.organization_id == user["organization_id"])
+    ).first()
+    if not row:
+        raise HTTPException(status_code=400, detail="Area no valida para este hospital")
+    return selected_area_id
+
+
+@contextmanager
+def scoped_connection(request: Request):
+    user = current_user(request)
+    with get_engine().begin() as connection:
+        set_rls_context(connection, user)
+        yield connection, user
 
 
 def is_expired(value) -> bool:
@@ -411,15 +492,19 @@ def logout(request: Request) -> dict:
 
 @app.get("/api/users")
 def get_users(request: Request) -> list[dict]:
-    require_role(request, "admin")
-    with get_engine().begin() as connection:
-        rows = connection.execute(select(users).order_by(users.c.created_at)).fetchall()
+    with scoped_connection(request) as (connection, user):
+        require_role(request, "admin")
+        rows = connection.execute(
+            select(users)
+            .where(users.c.organization_id == user["organization_id"])
+            .order_by(users.c.created_at)
+        ).fetchall()
     return [normalize_user(row) for row in rows]
 
 
 @app.post("/api/users", status_code=201)
 def create_user(request: Request, payload: UserPayload) -> dict:
-    require_role(request, "admin")
+    actor = require_role(request, "admin")
     username = normalize_username(payload.username)
     email = local_email_for_username(username)
     name = payload.name.strip()
@@ -428,8 +513,13 @@ def create_user(request: Request, payload: UserPayload) -> dict:
 
     salt = secrets.token_hex(16)
     user_id = str(uuid4())
-    with get_engine().begin() as connection:
-        duplicate = connection.execute(select(users.c.id).where(users.c.username == username)).first()
+    with scoped_connection(request) as (connection, user):
+        area_id = validate_area_for_user(connection, user, payload.area_id)
+        duplicate = connection.execute(
+            select(users.c.id)
+            .where(users.c.organization_id == actor["organization_id"])
+            .where(users.c.username == username)
+        ).first()
         if duplicate:
             raise HTTPException(
                 status_code=400,
@@ -438,6 +528,8 @@ def create_user(request: Request, payload: UserPayload) -> dict:
         connection.execute(
             insert(users).values(
                 id=user_id,
+                organization_id=actor["organization_id"],
+                area_id=area_id,
                 name=name,
                 username=username,
                 email=email,
@@ -452,7 +544,7 @@ def create_user(request: Request, payload: UserPayload) -> dict:
 
 @app.put("/api/users/{user_id}")
 def update_user(request: Request, user_id: str, payload: UserUpdatePayload) -> dict:
-    require_role(request, "admin")
+    actor = require_role(request, "admin")
     values = {}
     if payload.name is not None:
         values["name"] = payload.name.strip()
@@ -462,6 +554,8 @@ def update_user(request: Request, user_id: str, payload: UserUpdatePayload) -> d
         values["email"] = local_email_for_username(username)
     if payload.role is not None:
         values["role"] = payload.role
+    if payload.area_id is not None:
+        values["area_id"] = payload.area_id
     if payload.password:
         salt = secrets.token_hex(16)
         values["password_salt"] = salt
@@ -470,10 +564,13 @@ def update_user(request: Request, user_id: str, payload: UserUpdatePayload) -> d
         raise HTTPException(status_code=400, detail="No hay cambios para guardar")
     values["updated_at"] = func.now()
 
-    with get_engine().begin() as connection:
+    with scoped_connection(request) as (connection, user):
+        if "area_id" in values:
+            values["area_id"] = validate_area_for_user(connection, user, values["area_id"])
         if "username" in values:
             duplicate = connection.execute(
                 select(users.c.id)
+                .where(users.c.organization_id == actor["organization_id"])
                 .where(users.c.username == values["username"])
                 .where(users.c.id != user_id)
             ).first()
@@ -482,7 +579,12 @@ def update_user(request: Request, user_id: str, payload: UserUpdatePayload) -> d
                     status_code=400,
                     detail="Nombre de usuario ya existente, por favor elige otro",
                 )
-        result = connection.execute(update(users).where(users.c.id == user_id).values(**values))
+        result = connection.execute(
+            update(users)
+            .where(users.c.id == user_id)
+            .where(users.c.organization_id == actor["organization_id"])
+            .values(**values)
+        )
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         row = connection.execute(select(users).where(users.c.id == user_id)).first()
@@ -494,33 +596,87 @@ def delete_user(request: Request, user_id: str) -> dict:
     actor = require_role(request, "admin")
     if actor["id"] == user_id:
         raise HTTPException(status_code=400, detail="No puedes eliminar tu propia cuenta activa")
-    with get_engine().begin() as connection:
+    with scoped_connection(request) as (connection, user):
         connection.execute(delete(user_sessions).where(user_sessions.c.user_id == user_id))
-        result = connection.execute(delete(users).where(users.c.id == user_id))
+        result = connection.execute(
+            delete(users)
+            .where(users.c.id == user_id)
+            .where(users.c.organization_id == actor["organization_id"])
+        )
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return {"message": "Deleted", "id": user_id}
 
 
+@app.get("/api/organizations")
+def get_organizations(request: Request) -> list[dict]:
+    with scoped_connection(request) as (connection, user):
+        row = connection.execute(
+            select(organizations).where(organizations.c.id == user["organization_id"])
+        ).first()
+    return [normalize_organization(row)] if row else []
+
+
+@app.get("/api/areas")
+def get_areas(request: Request) -> list[dict]:
+    with scoped_connection(request) as (connection, user):
+        rows = connection.execute(
+            select(areas)
+            .where(areas.c.organization_id == user["organization_id"])
+            .order_by(areas.c.name)
+        ).fetchall()
+    return [normalize_area(row) for row in rows]
+
+
+@app.post("/api/areas", status_code=201)
+def create_area(request: Request, payload: AreaPayload) -> dict:
+    user = require_role(request, "admin")
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="El nombre del area es requerido")
+
+    with scoped_connection(request) as (connection, _user):
+        duplicate = connection.execute(
+            select(areas.c.id)
+            .where(areas.c.organization_id == user["organization_id"])
+            .where(func.lower(areas.c.name) == name.lower())
+        ).first()
+        if duplicate:
+            raise HTTPException(status_code=400, detail="Ya existe un area con ese nombre")
+        area_id = str(uuid4())
+        connection.execute(
+            insert(areas).values(id=area_id, organization_id=user["organization_id"], name=name)
+        )
+        row = connection.execute(select(areas).where(areas.c.id == area_id)).first()
+    return normalize_area(row)
+
+
 @app.get("/api/materials/{material_type}")
-def get_materials(material_type: MaterialType) -> list[dict]:
+def get_materials(request: Request, material_type: MaterialType) -> list[dict]:
     table = table_for_type(material_type)
-    with get_engine().begin() as connection:
-        rows = connection.execute(select(table).order_by(table.c.order_index, table.c.created_at)).fetchall()
+    with scoped_connection(request) as (connection, user):
+        rows = connection.execute(
+            select(table)
+            .where(scope_condition(table, user))
+            .order_by(table.c.order_index, table.c.created_at)
+        ).fetchall()
     return [normalize_material(row) for row in rows]
 
 
 @app.get("/api/material-lists")
-def get_material_lists() -> list[dict]:
+def get_material_lists(request: Request) -> list[dict]:
     result = []
-    with get_engine().begin() as connection:
+    with scoped_connection(request) as (connection, user):
         list_rows = connection.execute(
-            select(material_lists).order_by(material_lists.c.created_at)
+            select(material_lists)
+            .where(scope_condition(material_lists, user))
+            .order_by(material_lists.c.created_at)
         ).fetchall()
         for item in list_rows:
             rows = connection.execute(
                 select(custom_materials)
                 .where(custom_materials.c.list_id == item._mapping["id"])
+                .where(scope_condition(custom_materials, user))
                 .order_by(custom_materials.c.order_index, custom_materials.c.created_at)
             ).fetchall()
             result.append(normalize_material_list(item, [normalize_material(row) for row in rows]))
@@ -529,7 +685,7 @@ def get_material_lists() -> list[dict]:
 
 @app.post("/api/material-lists", status_code=201)
 def create_material_list(request: Request, payload: MaterialListPayload) -> dict:
-    require_role(request, "admin", "supervisor")
+    user = require_role(request, "admin", "supervisor")
     list_id = str(uuid4())
     name = payload.name.strip()
     if not name:
@@ -537,13 +693,16 @@ def create_material_list(request: Request, payload: MaterialListPayload) -> dict
     if name.lower() in {"gas", "vapor"}:
         raise HTTPException(status_code=400, detail="Gas and Vapor are system lists")
 
-    with get_engine().begin() as connection:
+    with scoped_connection(request) as (connection, scoped_user):
         duplicate = connection.execute(
-            select(material_lists.c.id).where(func.lower(material_lists.c.name) == name.lower())
+            select(material_lists.c.id)
+            .where(material_lists.c.organization_id == scoped_user["organization_id"])
+            .where(material_lists.c.area_id == scoped_user["area_id"])
+            .where(func.lower(material_lists.c.name) == name.lower())
         ).first()
         if duplicate:
             raise HTTPException(status_code=400, detail="A list with this name already exists")
-        connection.execute(insert(material_lists).values(id=list_id, name=name))
+        connection.execute(insert(material_lists).values(id=list_id, name=name, **scope_values(user)))
         row = connection.execute(select(material_lists).where(material_lists.c.id == list_id)).first()
 
     return normalize_material_list(row)
@@ -551,10 +710,14 @@ def create_material_list(request: Request, payload: MaterialListPayload) -> dict
 
 @app.delete("/api/material-lists/{list_id}")
 def delete_material_list(request: Request, list_id: str) -> dict:
-    require_role(request, "admin")
-    with get_engine().begin() as connection:
+    user = require_role(request, "admin")
+    with scoped_connection(request) as (connection, _user):
         connection.execute(delete(custom_materials).where(custom_materials.c.list_id == list_id))
-        result = connection.execute(delete(material_lists).where(material_lists.c.id == list_id))
+        result = connection.execute(
+            delete(material_lists)
+            .where(material_lists.c.id == list_id)
+            .where(material_lists.c.organization_id == user["organization_id"])
+        )
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="List not found")
     return {"message": "Deleted", "id": list_id}
@@ -562,14 +725,18 @@ def delete_material_list(request: Request, list_id: str) -> dict:
 
 @app.post("/api/material-lists/{list_id}/materials", status_code=201)
 def create_custom_material(request: Request, list_id: str, payload: MaterialPayload) -> dict:
-    require_role(request, "admin", "supervisor")
+    user = require_role(request, "admin", "supervisor")
     material_id = payload.id or str(uuid4())
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Material name is required")
 
-    with get_engine().begin() as connection:
-        if not connection.execute(select(material_lists.c.id).where(material_lists.c.id == list_id)).first():
+    with scoped_connection(request) as (connection, scoped_user):
+        if not connection.execute(
+            select(material_lists.c.id)
+            .where(material_lists.c.id == list_id)
+            .where(scope_condition(material_lists, scoped_user))
+        ).first():
             raise HTTPException(status_code=404, detail="List not found")
         next_order = connection.execute(
             select(func.coalesce(func.max(custom_materials.c.order_index), -1) + 1)
@@ -578,6 +745,7 @@ def create_custom_material(request: Request, list_id: str, payload: MaterialPayl
         connection.execute(
             insert(custom_materials).values(
                 id=material_id,
+                **scope_values(user),
                 list_id=list_id,
                 name=name,
                 existing=payload.existing,
@@ -593,12 +761,13 @@ def create_custom_material(request: Request, list_id: str, payload: MaterialPayl
 @app.put("/api/material-lists/{list_id}/materials/order")
 def update_custom_material_order(request: Request, list_id: str, payload: MaterialOrderPayload) -> list[dict]:
     require_role(request, "admin", "supervisor")
-    with get_engine().begin() as connection:
+    with scoped_connection(request) as (connection, user):
         existing_ids = [
             row._mapping["id"]
             for row in connection.execute(
                 select(custom_materials.c.id)
                 .where(custom_materials.c.list_id == list_id)
+                .where(scope_condition(custom_materials, user))
                 .order_by(custom_materials.c.order_index, custom_materials.c.created_at)
             ).fetchall()
         ]
@@ -609,11 +778,13 @@ def update_custom_material_order(request: Request, list_id: str, payload: Materi
                 update(custom_materials)
                 .where(custom_materials.c.id == material_id)
                 .where(custom_materials.c.list_id == list_id)
+                .where(scope_condition(custom_materials, user))
                 .values(order_index=order_index, updated_at=func.now())
             )
         rows = connection.execute(
             select(custom_materials)
             .where(custom_materials.c.list_id == list_id)
+            .where(scope_condition(custom_materials, user))
             .order_by(custom_materials.c.order_index, custom_materials.c.created_at)
         ).fetchall()
     return [normalize_material(row) for row in rows]
@@ -626,11 +797,12 @@ def update_custom_material(request: Request, list_id: str, material_id: str, pay
     if not name:
         raise HTTPException(status_code=400, detail="Material name is required")
 
-    with get_engine().begin() as connection:
+    with scoped_connection(request) as (connection, user):
         result = connection.execute(
             update(custom_materials)
             .where(custom_materials.c.id == material_id)
             .where(custom_materials.c.list_id == list_id)
+            .where(scope_condition(custom_materials, user))
             .values(
                 name=name,
                 existing=payload.existing,
@@ -652,9 +824,11 @@ def move_custom_material(request: Request, list_id: str, material_id: str, paylo
     if not name:
         raise HTTPException(status_code=400, detail="Material name is required")
 
-    with get_engine().begin() as connection:
+    with scoped_connection(request) as (connection, user):
         if not connection.execute(
-            select(material_lists.c.id).where(material_lists.c.id == payload.target_list_id)
+            select(material_lists.c.id)
+            .where(material_lists.c.id == payload.target_list_id)
+            .where(scope_condition(material_lists, user))
         ).first():
             raise HTTPException(status_code=404, detail="Target list not found")
 
@@ -666,6 +840,7 @@ def move_custom_material(request: Request, list_id: str, material_id: str, paylo
             update(custom_materials)
             .where(custom_materials.c.id == material_id)
             .where(custom_materials.c.list_id == list_id)
+            .where(scope_condition(custom_materials, user))
             .values(
                 list_id=payload.target_list_id,
                 name=name,
@@ -685,11 +860,12 @@ def move_custom_material(request: Request, list_id: str, material_id: str, paylo
 @app.delete("/api/material-lists/{list_id}/materials/{material_id}")
 def delete_custom_material(request: Request, list_id: str, material_id: str) -> dict:
     require_role(request, "admin")
-    with get_engine().begin() as connection:
+    with scoped_connection(request) as (connection, user):
         result = connection.execute(
             delete(custom_materials)
             .where(custom_materials.c.id == material_id)
             .where(custom_materials.c.list_id == list_id)
+            .where(scope_condition(custom_materials, user))
         )
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Material not found")
@@ -698,21 +874,24 @@ def delete_custom_material(request: Request, list_id: str, material_id: str) -> 
 
 @app.post("/api/materials/{material_type}", status_code=201)
 def create_material(request: Request, material_type: MaterialType, payload: MaterialPayload) -> dict:
-    require_role(request, "admin", "supervisor")
+    user = require_role(request, "admin", "supervisor")
     table = table_for_type(material_type)
     material_id = payload.id or str(uuid4())
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Material name is required")
 
-    with get_engine().begin() as connection:
+    with scoped_connection(request) as (connection, _user):
         next_order = connection.execute(
             select(func.coalesce(func.max(table.c.order_index), -1) + 1)
+            .where(table.c.organization_id == user["organization_id"])
+            .where(table.c.area_id == user["area_id"])
         ).scalar_one()
         try:
             connection.execute(
                 insert(table).values(
                     id=material_id,
+                    **scope_values(user),
                     name=name,
                     existing=payload.existing,
                     counted=payload.counted,
@@ -732,11 +911,13 @@ def create_material(request: Request, material_type: MaterialType, payload: Mate
 def update_material_order(request: Request, material_type: MaterialType, payload: MaterialOrderPayload) -> list[dict]:
     require_role(request, "admin", "supervisor")
     table = table_for_type(material_type)
-    with get_engine().begin() as connection:
+    with scoped_connection(request) as (connection, user):
         existing_ids = [
             row._mapping["id"]
             for row in connection.execute(
-                select(table.c.id).order_by(table.c.order_index, table.c.created_at)
+                select(table.c.id)
+                .where(scope_condition(table, user))
+                .order_by(table.c.order_index, table.c.created_at)
             ).fetchall()
         ]
         merged_ids = merge_order_ids(payload.ids, existing_ids)
@@ -745,10 +926,13 @@ def update_material_order(request: Request, material_type: MaterialType, payload
             connection.execute(
                 update(table)
                 .where(table.c.id == material_id)
+                .where(scope_condition(table, user))
                 .values(order_index=order_index, updated_at=func.now())
             )
 
-        rows = connection.execute(select(table).order_by(table.c.order_index, table.c.created_at)).fetchall()
+        rows = connection.execute(
+            select(table).where(scope_condition(table, user)).order_by(table.c.order_index, table.c.created_at)
+        ).fetchall()
 
     return [normalize_material(row) for row in rows]
 
@@ -761,10 +945,11 @@ def update_material(request: Request, material_type: MaterialType, material_id: 
     if not name:
         raise HTTPException(status_code=400, detail="Material name is required")
 
-    with get_engine().begin() as connection:
+    with scoped_connection(request) as (connection, user):
         result = connection.execute(
             update(table)
             .where(table.c.id == material_id)
+            .where(scope_condition(table, user))
             .values(
                 name=name,
                 existing=payload.existing,
@@ -798,26 +983,31 @@ def change_material_type(
     if payload.type == material_type:
         return update_material(request, material_type, material_id, payload)
 
-    with get_engine().begin() as connection:
+    with scoped_connection(request) as (connection, user):
         source_row = connection.execute(
             select(source_table).where(source_table.c.id == material_id)
+            .where(scope_condition(source_table, user))
         ).first()
         if not source_row:
             raise HTTPException(status_code=404, detail="Material not found")
 
         duplicate = connection.execute(
             select(target_table.c.id).where(target_table.c.id == material_id)
+            .where(scope_condition(target_table, user))
         ).first()
         if duplicate:
             raise HTTPException(status_code=400, detail="Material already exists in target type")
 
         next_order = connection.execute(
             select(func.coalesce(func.max(target_table.c.order_index), -1) + 1)
+            .where(target_table.c.organization_id == user["organization_id"])
+            .where(target_table.c.area_id == user["area_id"])
         ).scalar_one()
 
         connection.execute(
             insert(target_table).values(
                 id=material_id,
+                **scope_values(user),
                 name=name,
                 existing=payload.existing,
                 counted=payload.counted,
@@ -825,7 +1015,7 @@ def change_material_type(
                 order_index=next_order,
             )
         )
-        connection.execute(delete(source_table).where(source_table.c.id == material_id))
+        connection.execute(delete(source_table).where(source_table.c.id == material_id).where(scope_condition(source_table, user)))
         row = connection.execute(select(target_table).where(target_table.c.id == material_id)).first()
 
     return normalize_material(row)
@@ -835,8 +1025,8 @@ def change_material_type(
 def delete_material(request: Request, material_type: MaterialType, material_id: str) -> dict:
     require_role(request, "admin")
     table = table_for_type(material_type)
-    with get_engine().begin() as connection:
-        result = connection.execute(delete(table).where(table.c.id == material_id))
+    with scoped_connection(request) as (connection, user):
+        result = connection.execute(delete(table).where(table.c.id == material_id).where(scope_condition(table, user)))
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Material not found")
 
@@ -844,11 +1034,11 @@ def delete_material(request: Request, material_type: MaterialType, material_id: 
 
 
 @app.get("/api/reports")
-def get_reports() -> list[dict]:
+def get_reports(request: Request) -> list[dict]:
     result = []
-    with get_engine().begin() as connection:
+    with scoped_connection(request) as (connection, user):
         report_rows = connection.execute(
-            select(reports).order_by(desc(reports.c.created_at))
+            select(reports).where(scope_condition(reports, user)).order_by(desc(reports.c.created_at))
         ).fetchall()
         for report in report_rows:
             differences = connection.execute(
@@ -867,7 +1057,7 @@ def get_reports() -> list[dict]:
 
 @app.post("/api/reports", status_code=201)
 def create_report(request: Request, payload: ReportPayload) -> dict:
-    require_role(request, "admin", "supervisor", "nurse")
+    user = require_role(request, "admin", "supervisor", "nurse")
     report_id = payload.id or str(uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
     user_name = payload.user_name.strip()
@@ -878,10 +1068,11 @@ def create_report(request: Request, payload: ReportPayload) -> dict:
 
     normalized = normalize_payload_differences(payload)
 
-    with get_engine().begin() as connection:
+    with scoped_connection(request) as (connection, _user):
         connection.execute(
             insert(reports).values(
                 id=report_id,
+                **scope_values(user),
                 type=payload.type,
                 user_name=user_name,
                 shift=shift,
@@ -928,8 +1119,12 @@ def update_report(request: Request, report_id: str, payload: ReportPayload) -> d
 
     normalized = normalize_payload_differences(payload)
 
-    with get_engine().begin() as connection:
-        existing_report = connection.execute(select(reports).where(reports.c.id == report_id)).first()
+    with scoped_connection(request) as (connection, user):
+        existing_report = connection.execute(
+            select(reports)
+            .where(reports.c.id == report_id)
+            .where(scope_condition(reports, user))
+        ).first()
         if not existing_report:
             raise HTTPException(status_code=404, detail="Report not found")
 
@@ -938,6 +1133,7 @@ def update_report(request: Request, report_id: str, payload: ReportPayload) -> d
         result = connection.execute(
             update(reports)
             .where(reports.c.id == report_id)
+            .where(scope_condition(reports, user))
             .values(
                 type=payload.type,
                 user_name=user_name,

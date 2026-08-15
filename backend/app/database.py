@@ -25,10 +25,34 @@ load_dotenv()
 
 metadata = MetaData()
 
+DEFAULT_ORGANIZATION_ID = "org-default"
+DEFAULT_AREA_ID = "area-default"
+
+organizations = Table(
+    "organizations",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("name", String, nullable=False, unique=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+areas = Table(
+    "areas",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("organization_id", String, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False),
+    Column("name", String, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
 materials_gas = Table(
     "materials_gas",
     metadata,
     Column("id", String, primary_key=True),
+    Column("organization_id", String, ForeignKey("organizations.id"), nullable=False, server_default=DEFAULT_ORGANIZATION_ID),
+    Column("area_id", String, ForeignKey("areas.id"), nullable=False, server_default=DEFAULT_AREA_ID),
     Column("name", String, nullable=False),
     Column("existing", Integer, nullable=False, server_default="0"),
     Column("counted", Integer, nullable=False, server_default="0"),
@@ -42,6 +66,8 @@ materials_vapor = Table(
     "materials_vapor",
     metadata,
     Column("id", String, primary_key=True),
+    Column("organization_id", String, ForeignKey("organizations.id"), nullable=False, server_default=DEFAULT_ORGANIZATION_ID),
+    Column("area_id", String, ForeignKey("areas.id"), nullable=False, server_default=DEFAULT_AREA_ID),
     Column("name", String, nullable=False),
     Column("existing", Integer, nullable=False, server_default="0"),
     Column("counted", Integer, nullable=False, server_default="0"),
@@ -55,6 +81,8 @@ material_lists = Table(
     "material_lists",
     metadata,
     Column("id", String, primary_key=True),
+    Column("organization_id", String, ForeignKey("organizations.id"), nullable=False, server_default=DEFAULT_ORGANIZATION_ID),
+    Column("area_id", String, ForeignKey("areas.id"), nullable=False, server_default=DEFAULT_AREA_ID),
     Column("name", String, nullable=False, unique=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
@@ -64,6 +92,8 @@ custom_materials = Table(
     "custom_materials",
     metadata,
     Column("id", String, primary_key=True),
+    Column("organization_id", String, ForeignKey("organizations.id"), nullable=False, server_default=DEFAULT_ORGANIZATION_ID),
+    Column("area_id", String, ForeignKey("areas.id"), nullable=False, server_default=DEFAULT_AREA_ID),
     Column("list_id", String, ForeignKey("material_lists.id", ondelete="CASCADE"), nullable=False),
     Column("name", String, nullable=False),
     Column("existing", Integer, nullable=False, server_default="0"),
@@ -78,6 +108,8 @@ reports = Table(
     "reports",
     metadata,
     Column("id", String, primary_key=True),
+    Column("organization_id", String, ForeignKey("organizations.id"), nullable=False, server_default=DEFAULT_ORGANIZATION_ID),
+    Column("area_id", String, ForeignKey("areas.id"), nullable=False, server_default=DEFAULT_AREA_ID),
     Column("type", String, nullable=False),
     Column("user_name", String, nullable=False, server_default=""),
     Column("shift", String, nullable=False, server_default=""),
@@ -105,6 +137,8 @@ users = Table(
     "users",
     metadata,
     Column("id", String, primary_key=True),
+    Column("organization_id", String, ForeignKey("organizations.id"), nullable=False, server_default=DEFAULT_ORGANIZATION_ID),
+    Column("area_id", String, ForeignKey("areas.id"), nullable=False, server_default=DEFAULT_AREA_ID),
     Column("name", String, nullable=False),
     Column("username", String, nullable=False, unique=True),
     Column("email", String, nullable=False, unique=True),
@@ -164,8 +198,11 @@ def migrate_existing_tables() -> None:
     inspector = inspect(engine)
     table_names = inspector.get_table_names()
     with engine.begin() as connection:
+        ensure_default_organization_and_area(connection)
+
         if "users" in table_names:
             user_columns = {column["name"] for column in inspector.get_columns("users")}
+            ensure_scope_columns(connection, "users", user_columns)
             if "username" not in user_columns:
                 connection.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR"))
                 rows = connection.execute(text("SELECT id, name, email FROM users ORDER BY created_at")).fetchall()
@@ -191,6 +228,7 @@ def migrate_existing_tables() -> None:
 
         if "reports" in table_names:
             report_columns = {column["name"] for column in inspector.get_columns("reports")}
+            ensure_scope_columns(connection, "reports", report_columns)
             if "user_name" not in report_columns:
                 connection.execute(
                     text("ALTER TABLE reports ADD COLUMN user_name VARCHAR NOT NULL DEFAULT ''")
@@ -210,6 +248,7 @@ def migrate_existing_tables() -> None:
                 material_columns = {
                     column["name"] for column in inspector.get_columns(table_name)
                 }
+                ensure_scope_columns(connection, table_name, material_columns)
                 if "order_index" not in material_columns:
                     connection.execute(
                         text(
@@ -237,6 +276,109 @@ def migrate_existing_tables() -> None:
                         "ADD COLUMN room_count INTEGER NOT NULL DEFAULT 0"
                     )
                 )
+            if "process_count" not in difference_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE report_differences "
+                        "ADD COLUMN process_count INTEGER NOT NULL DEFAULT 0"
+                    )
+                )
+
+        if "material_lists" in table_names:
+            ensure_scope_columns(
+                connection,
+                "material_lists",
+                {column["name"] for column in inspector.get_columns("material_lists")},
+            )
+
+        if "custom_materials" in table_names:
+            ensure_scope_columns(
+                connection,
+                "custom_materials",
+                {column["name"] for column in inspector.get_columns("custom_materials")},
+            )
+
+        apply_rls_policies(connection)
+
+
+def ensure_default_organization_and_area(connection) -> None:
+    connection.execute(
+        text(
+            """
+            INSERT INTO organizations (id, name)
+            VALUES (:id, :name)
+            ON CONFLICT (id) DO NOTHING
+            """
+        ),
+        {"id": DEFAULT_ORGANIZATION_ID, "name": os.getenv("DEFAULT_ORGANIZATION_NAME", "HyunSia Hospital")},
+    )
+    connection.execute(
+        text(
+            """
+            INSERT INTO areas (id, organization_id, name)
+            VALUES (:id, :organization_id, :name)
+            ON CONFLICT (id) DO NOTHING
+            """
+        ),
+        {
+            "id": DEFAULT_AREA_ID,
+            "organization_id": DEFAULT_ORGANIZATION_ID,
+            "name": os.getenv("DEFAULT_AREA_NAME", "Quirofano"),
+        },
+    )
+
+
+def ensure_scope_columns(connection, table_name: str, columns: set[str]) -> None:
+    if "organization_id" not in columns:
+        connection.execute(
+            text(
+                f"ALTER TABLE {table_name} "
+                f"ADD COLUMN organization_id VARCHAR NOT NULL DEFAULT '{DEFAULT_ORGANIZATION_ID}'"
+            )
+        )
+    if "area_id" not in columns:
+        connection.execute(
+            text(
+                f"ALTER TABLE {table_name} "
+                f"ADD COLUMN area_id VARCHAR NOT NULL DEFAULT '{DEFAULT_AREA_ID}'"
+            )
+        )
+
+
+def apply_rls_policies(connection) -> None:
+    if engine.dialect.name != "postgresql":
+        return
+
+    connection.execute(text("ALTER TABLE users DISABLE ROW LEVEL SECURITY"))
+
+    scoped_tables = (
+        "materials_gas",
+        "materials_vapor",
+        "material_lists",
+        "custom_materials",
+        "reports",
+        "areas",
+    )
+    for table_name in scoped_tables:
+        connection.execute(text(f"ALTER TABLE {table_name} ENABLE ROW LEVEL SECURITY"))
+        connection.execute(text(f"DROP POLICY IF EXISTS app_tenant_policy ON {table_name}"))
+        if table_name == "areas":
+            condition = "organization_id = current_setting('app.organization_id', true)"
+        else:
+            condition = (
+                "organization_id = current_setting('app.organization_id', true) "
+                "AND (current_setting('app.role', true) IN ('admin','supervisor') "
+                "OR area_id = current_setting('app.area_id', true))"
+            )
+        connection.execute(
+            text(
+                f"""
+                CREATE POLICY app_tenant_policy ON {table_name}
+                USING ({condition})
+                WITH CHECK ({condition})
+                """
+            )
+        )
             if "process_count" not in difference_columns:
                 connection.execute(
                     text(

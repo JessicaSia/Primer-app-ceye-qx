@@ -1389,7 +1389,7 @@ table tbody tr:hover {
 
 .user-card-content {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto auto auto;
+  grid-template-columns: minmax(220px, 1fr) auto auto auto auto;
   gap: 12px;
   align-items: center;
 }
@@ -1410,7 +1410,7 @@ table tbody tr:hover {
 }
 
 .user-edit-form {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
 @media (max-width: 1024px) {
