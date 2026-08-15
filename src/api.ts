@@ -61,10 +61,37 @@ async function request<T = any>(path: string, options?: RequestInit): Promise<T>
       clearAuthToken();
     }
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail || body.error || 'API request failed');
+    throw new Error(getApiErrorMessage(body));
   }
 
   return response.json();
+}
+
+function getApiErrorMessage(body: any) {
+  if (typeof body?.detail === 'string') {
+    return body.detail;
+  }
+
+  if (Array.isArray(body?.detail)) {
+    const stillNeedsEmail = body.detail.some((item: any) => item?.loc?.includes?.('email'));
+    if (stillNeedsEmail) {
+      return 'El backend aun no esta actualizado para entrar con nombre de usuario. Despliega el backend en Render y vuelve a intentar.';
+    }
+
+    return body.detail
+      .map((item: any) => item?.msg || item?.message || 'Datos invalidos')
+      .join('. ');
+  }
+
+  if (body?.detail && typeof body.detail === 'object') {
+    return body.detail.message || JSON.stringify(body.detail);
+  }
+
+  if (typeof body?.error === 'string') {
+    return body.error;
+  }
+
+  return 'No se pudo completar la solicitud.';
 }
 
 export function getAuthToken() {
