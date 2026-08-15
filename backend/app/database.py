@@ -379,13 +379,6 @@ def apply_rls_policies(connection) -> None:
                 """
             )
         )
-            if "process_count" not in difference_columns:
-                connection.execute(
-                    text(
-                        "ALTER TABLE report_differences "
-                        "ADD COLUMN process_count INTEGER NOT NULL DEFAULT 0"
-                    )
-                )
 
 
 def remove_reports_type_check(connection) -> None:
