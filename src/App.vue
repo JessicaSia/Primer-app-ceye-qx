@@ -1243,13 +1243,41 @@ async function printReport(reportId: string) {
 
 <template>
   <section v-if="!currentUser" class="login-page">
+    <div class="login-rain" aria-hidden="true">
+      <span v-for="index in 28" :key="index" class="rain-item">
+        <svg v-if="index % 4 === 0" viewBox="0 0 48 48">
+          <path d="M14 36h20" />
+          <path d="M18 14v20" />
+          <path d="M14 14h8" />
+          <path d="M31 13 24 35" />
+          <path d="M34 13 41 35" />
+        </svg>
+        <svg v-else-if="index % 4 === 1" viewBox="0 0 48 48">
+          <path d="M10 36h28" />
+          <path d="M14 30h4v6h-4z" />
+          <path d="M22 22h4v14h-4z" />
+          <path d="M30 15h4v21h-4z" />
+        </svg>
+        <svg v-else-if="index % 4 === 2" viewBox="0 0 48 48">
+          <path d="M24 10v28" />
+          <path d="M10 24h28" />
+          <circle cx="24" cy="24" r="14" />
+        </svg>
+        <svg v-else viewBox="0 0 48 48">
+          <path d="M12 30c7-7 17-7 24 0" />
+          <path d="M15 21c5-5 13-5 18 0" />
+          <path d="M20 15c3-3 5-3 8 0" />
+          <path d="M24 30v8" />
+        </svg>
+      </span>
+    </div>
     <div v-if="notification" :class="['notification', notification.type]">
       {{ notification.message }}
     </div>
     <form class="login-card" @submit.prevent="handleLogin">
       <span class="eyebrow">Acceso seguro</span>
-      <h1>Ceye Qx</h1>
-      <p>Inicia sesion con tu cuenta para ver inventario, reportes y permisos de tu rol.</p>
+      <h1>HyunSia</h1>
+      <p>Inicia sesion con tu cuenta.</p>
       <input
         v-model="loginUsername"
         type="text"
