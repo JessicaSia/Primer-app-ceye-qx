@@ -24,6 +24,11 @@ export interface Area {
   name: string;
 }
 
+export interface Organization {
+  id: string;
+  name: string;
+}
+
 export interface MaterialPayload {
   id?: string;
   name: string;
@@ -131,6 +136,7 @@ export const logout = (token?: string) =>
   });
 
 export const getUsers = () => request<AuthUser[]>('/users');
+export const getOrganizations = () => request<Organization[]>('/organizations');
 export const getAreas = () => request<Area[]>('/areas');
 export const createArea = (name: string) =>
   request<Area>('/areas', {

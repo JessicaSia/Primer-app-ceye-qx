@@ -27,6 +27,8 @@ metadata = MetaData()
 
 DEFAULT_ORGANIZATION_ID = "org-default"
 DEFAULT_AREA_ID = "area-default"
+DEFAULT_ORGANIZATION_NAME = os.getenv("DEFAULT_ORGANIZATION_NAME", "AUna galerias")
+DEFAULT_AREA_NAME = os.getenv("DEFAULT_AREA_NAME", "ceye quirofano")
 
 organizations = Table(
     "organizations",
@@ -307,23 +309,28 @@ def ensure_default_organization_and_area(connection) -> None:
             """
             INSERT INTO organizations (id, name)
             VALUES (:id, :name)
-            ON CONFLICT (id) DO NOTHING
+            ON CONFLICT (id) DO UPDATE
+            SET name = EXCLUDED.name,
+                updated_at = CURRENT_TIMESTAMP
             """
         ),
-        {"id": DEFAULT_ORGANIZATION_ID, "name": os.getenv("DEFAULT_ORGANIZATION_NAME", "HyunSia Hospital")},
+        {"id": DEFAULT_ORGANIZATION_ID, "name": DEFAULT_ORGANIZATION_NAME},
     )
     connection.execute(
         text(
             """
             INSERT INTO areas (id, organization_id, name)
             VALUES (:id, :organization_id, :name)
-            ON CONFLICT (id) DO NOTHING
+            ON CONFLICT (id) DO UPDATE
+            SET organization_id = EXCLUDED.organization_id,
+                name = EXCLUDED.name,
+                updated_at = CURRENT_TIMESTAMP
             """
         ),
         {
             "id": DEFAULT_AREA_ID,
             "organization_id": DEFAULT_ORGANIZATION_ID,
-            "name": os.getenv("DEFAULT_AREA_NAME", "Quirofano"),
+            "name": DEFAULT_AREA_NAME,
         },
     )
 

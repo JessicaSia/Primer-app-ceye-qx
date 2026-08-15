@@ -20,6 +20,7 @@ import {
   getMaterialsGas,
   getMaterialsVapor,
   getMe,
+  getOrganizations,
   getReports,
   getUsers,
   login,
@@ -28,6 +29,7 @@ import {
   setAuthToken,
   type Area,
   type AuthUser,
+  type Organization,
   type UserRole,
   updateMaterialOrder,
   updateReport,
@@ -85,6 +87,7 @@ const loginPassword = ref('');
 const loginLoading = ref(false);
 const usersList = ref<AuthUser[]>([]);
 const areasList = ref<Area[]>([]);
+const organizationsList = ref<Organization[]>([]);
 const usersLoading = ref(false);
 const newUserName = ref('');
 const newUsername = ref('');
@@ -301,6 +304,8 @@ const canSaveReports = computed(() =>
   ['admin', 'supervisor', 'nurse'].includes(currentUser.value?.role || '')
 );
 const reportEditWindowMs = 12 * 60 * 60 * 1000;
+const currentOrganizationName = computed(() => organizationLabel(currentUser.value?.organization_id));
+const currentAreaName = computed(() => areaLabel(currentUser.value?.area_id));
 
 onMounted(() => {
   loadSession();
@@ -328,10 +333,12 @@ async function loadData() {
   }
 
   try {
-    areasList.value = await getAreas();
+    const [organizationData, areaData] = await Promise.all([getOrganizations(), getAreas()]);
+    organizationsList.value = organizationData;
+    areasList.value = areaData;
   } catch (error) {
     console.error(error);
-    showNotification(getErrorMessage(error, 'Error cargando areas'), 'error');
+    showNotification(getErrorMessage(error, 'Error cargando hospital y areas'), 'error');
   }
 }
 
@@ -512,6 +519,10 @@ async function loadUsersList() {
 
 function roleLabel(role: UserRole) {
   return roleOptions.find((option) => option.value === role)?.label || role;
+}
+
+function organizationLabel(organizationId?: string) {
+  return organizationsList.value.find((organization) => organization.id === organizationId)?.name || 'Sin hospital';
 }
 
 function areaLabel(areaId?: string) {
@@ -1388,7 +1399,8 @@ async function printReport(reportId: string) {
       <div class="sidebar-user">
         <strong>{{ currentUser.name }}</strong>
         <span>{{ roleLabel(currentUser.role) }}</span>
-        <span>{{ areaLabel(currentUser.area_id) }}</span>
+        <span>{{ currentOrganizationName }}</span>
+        <span>{{ currentAreaName }}</span>
         <button type="button" class="ghost-button" @click.stop="handleLogout">Salir</button>
       </div>
     </aside>
@@ -1402,8 +1414,8 @@ async function printReport(reportId: string) {
         <div class="dashboard-hero">
           <div>
             <span class="eyebrow">Panel principal</span>
-            <h1>Inventario Ceye Quirofano</h1>
-            <p>Resumen operativo de materiales, conteos y reportes guardados.</p>
+            <h1>{{ currentOrganizationName }}</h1>
+            <p>Inventario y reportes de {{ currentAreaName }}.</p>
           </div>
           <div class="dashboard-actions">
             <button v-if="canSaveReports" @click="setView('select')">Nuevo Conteo</button>
