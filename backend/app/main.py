@@ -236,7 +236,7 @@ def scope_condition(table, user: dict):
 
 def scope_values(user: dict) -> dict:
     if not user.get("organization_id") or not user.get("area_id"):
-        raise HTTPException(status_code=400, detail="Selecciona hospital y sede antes de guardar datos")
+        raise HTTPException(status_code=400, detail="Selecciona hospital y area antes de guardar datos")
     return {
         "organization_id": user["organization_id"],
         "area_id": user["area_id"],
@@ -269,7 +269,7 @@ def resolve_scoped_user(request: Request, connection) -> dict:
             .where(areas.c.organization_id == user.get("organization_id"))
         ).first()
         if not row:
-            raise HTTPException(status_code=400, detail="Sede no valida para este hospital")
+            raise HTTPException(status_code=400, detail="Area no valida para este hospital")
         user["area_id"] = area_id
         user["_selected_area_id"] = area_id
     else:

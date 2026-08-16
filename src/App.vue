@@ -549,7 +549,7 @@ function organizationLabel(organizationId?: string) {
 }
 
 function areaLabel(areaId?: string) {
-  if (isOwner.value && !areaId) return 'Todas las sedes';
+  if (isOwner.value && !areaId) return 'Todas las areas';
   return areasList.value.find((area) => area.id === areaId)?.name || 'Sin area';
 }
 
@@ -605,7 +605,7 @@ async function createAppArea() {
     return;
   }
   if (isOwner.value && !selectedOrganizationId.value) {
-    showNotification('Selecciona un hospital antes de crear una sede.', 'error');
+    showNotification('Selecciona un hospital antes de crear un area.', 'error');
     return;
   }
 
@@ -1500,7 +1500,7 @@ async function printReport(reportId: string) {
             </option>
           </select>
           <select v-model="selectedAreaId" @change="changeOwnerContext">
-            <option value="">Todas las sedes</option>
+            <option value="">Todas las areas</option>
             <option v-for="area in filteredAreasList" :key="area.id" :value="area.id">
               {{ area.name }}
             </option>
@@ -1512,7 +1512,7 @@ async function printReport(reportId: string) {
             <span class="eyebrow">Panel principal</span>
             <h1>{{ currentOrganizationName }}</h1>
             <div class="dashboard-location-card">
-              <span>Nombre de sede</span>
+              <span>Nombre de area</span>
               <strong>{{ currentAreaName }}</strong>
             </div>
             <p>Inventario, conteos y reportes operativos del área asignada.</p>
@@ -1821,7 +1821,7 @@ async function printReport(reportId: string) {
       <button @click="setView('home')">Volver</button>
 
       <div class="section-block user-form">
-        <h2>Hospitales y sedes</h2>
+        <h2>Hospitales y areas</h2>
         <template v-if="isOwner">
           <input v-model="newOrganizationName" type="text" placeholder="Nuevo hospital" @keyup.enter="createAppOrganization" />
           <button class="success-button" @click="createAppOrganization">Crear Hospital</button>
@@ -1831,7 +1831,7 @@ async function printReport(reportId: string) {
             </option>
           </select>
           <select v-model="selectedAreaId" @change="changeOwnerContext">
-            <option value="">Todas las sedes</option>
+            <option value="">Todas las areas</option>
             <option v-for="area in filteredAreasList" :key="area.id" :value="area.id">
               {{ area.name }}
             </option>
