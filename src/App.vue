@@ -47,7 +47,7 @@ import {
   updateMaterialVapor,
 } from './api';
 
-type View = 'home' | 'select' | 'gas' | 'vapor' | 'custom-count' | 'stock' | 'reports' | 'users';
+type View = 'home' | 'select' | 'gas' | 'vapor' | 'custom-count' | 'stock' | 'reports' | 'users' | 'hospital-edit';
 type MaterialType = 'gas' | 'vapor';
 type CountTarget = MaterialType | string;
 
@@ -107,6 +107,7 @@ const newUserRole = ref<UserRole>('nurse');
 const newUserOrganizationId = ref('');
 const newUserAreaId = ref('');
 const hospitalAreaDrafts = ref<Record<string, string>>({});
+const selectedHospitalForEditId = ref<string | null>(null);
 const editingOrganizationId = ref<string | null>(null);
 const editingOrganizationName = ref('');
 const editingAreaId = ref<string | null>(null);
@@ -320,6 +321,9 @@ const currentAreaId = computed(() => (isOwner.value ? selectedAreaId.value : cur
 const filteredAreasList = computed(() =>
   areasList.value.filter((area) => !currentOrganizationId.value || area.organization_id === currentOrganizationId.value)
 );
+const selectedHospitalForEdit = computed(() =>
+  organizationsList.value.find((organization) => organization.id === selectedHospitalForEditId.value) || null
+);
 const canManageUsers = computed(() => currentUser.value?.role === 'admin' || isOwner.value);
 const canManageStock = computed(() =>
   isOwner.value || currentUser.value?.role === 'admin' || currentUser.value?.role === 'supervisor'
@@ -480,7 +484,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 function confirmDelete(message: string) {
-  return window.confirm(message);
+  return window.confirm(message.split('쩔').join(''));
 }
 
 function setView(nextView: View) {
@@ -658,13 +662,21 @@ async function createAreaForOrganization(organizationId: string) {
 }
 
 function startOrganizationEdit(organization: Organization) {
+  selectedHospitalForEditId.value = organization.id;
   editingOrganizationId.value = organization.id;
   editingOrganizationName.value = organization.name;
+  editingAreaId.value = null;
+  editingAreaName.value = '';
+  view.value = 'hospital-edit';
 }
 
-function cancelOrganizationEdit() {
+function closeHospitalEdit() {
+  selectedHospitalForEditId.value = null;
   editingOrganizationId.value = null;
   editingOrganizationName.value = '';
+  editingAreaId.value = null;
+  editingAreaName.value = '';
+  setView('users');
 }
 
 async function saveOrganizationEdit(organizationId: string) {
@@ -679,7 +691,7 @@ async function saveOrganizationEdit(organizationId: string) {
     organizationsList.value = organizationsList.value.map((organization) =>
       organization.id === organizationId ? updated : organization
     );
-    cancelOrganizationEdit();
+    editingOrganizationName.value = updated.name;
     showNotification(`Hospital "${updated.name}" actualizado correctamente.`);
   } catch (error) {
     console.error(error);
@@ -700,6 +712,9 @@ async function removeOrganization(organization: Organization) {
       selectedAreaId.value = '';
       setActiveContext(selectedOrganizationId.value, selectedAreaId.value);
       await loadData();
+    }
+    if (selectedHospitalForEditId.value === organization.id) {
+      closeHospitalEdit();
     }
     showNotification(`Hospital "${organization.name}" eliminado correctamente.`);
   } catch (error) {
@@ -1979,66 +1994,32 @@ async function printReport(reportId: string) {
             v-for="organization in organizationsList"
             :key="organization.id"
             :class="['hospital-card', { active: selectedOrganizationId === organization.id }]"
+            @click="selectOrganization(organization.id)"
           >
             <div class="hospital-card-header">
-              <div v-if="editingOrganizationId !== organization.id">
+              <div>
                 <span>Hospital</span>
                 <strong>{{ organization.name }}</strong>
               </div>
-              <div v-else class="hospital-edit-row">
-                <input v-model="editingOrganizationName" type="text" @keyup.enter="saveOrganizationEdit(organization.id)" />
-                <button class="success-button" @click="saveOrganizationEdit(organization.id)">Guardar</button>
-                <button @click="cancelOrganizationEdit">Cancelar</button>
-              </div>
-              <div v-if="editingOrganizationId !== organization.id" class="hospital-card-buttons">
-                <button class="info-button" @click="selectOrganization(organization.id)">
-                  Seleccionar
-                </button>
-                <button class="info-button" @click="startOrganizationEdit(organization)">Editar</button>
-                <button class="danger-button" @click="removeOrganization(organization)">Eliminar</button>
-              </div>
+              <button class="info-button" @click.stop="startOrganizationEdit(organization)">Editar</button>
             </div>
 
             <div class="area-list">
-              <button
+              <span
                 :class="['area-chip', { active: selectedOrganizationId === organization.id && selectedAreaId === '' }]"
-                @click="selectOrganization(organization.id, '')"
               >
                 Todas las areas
-              </button>
-              <div
+              </span>
+              <span
                 v-for="area in areasForOrganization(organization.id)"
                 :key="area.id"
-                :class="['area-item', { active: selectedAreaId === area.id }]"
+                :class="['area-chip', { active: selectedOrganizationId === organization.id && selectedAreaId === area.id }]"
               >
-                <template v-if="editingAreaId !== area.id">
-                  <button class="area-chip" @click="selectOrganization(organization.id, area.id)">
-                    {{ area.name }}
-                  </button>
-                  <button class="mini-button" @click="startAreaEdit(area)">Editar</button>
-                  <button class="mini-button danger-button" @click="removeArea(area)">Eliminar</button>
-                </template>
-                <template v-else>
-                  <input v-model="editingAreaName" type="text" @keyup.enter="saveAreaEdit(area)" />
-                  <button class="mini-button success-button" @click="saveAreaEdit(area)">Guardar</button>
-                  <button class="mini-button" @click="cancelAreaEdit">Cancelar</button>
-                </template>
-              </div>
+                {{ area.name }}
+              </span>
               <span v-if="areasForOrganization(organization.id).length === 0" class="empty-search-result">
                 Sin areas registradas.
               </span>
-            </div>
-
-            <div class="hospital-card-actions">
-              <input
-                v-model="hospitalAreaDrafts[organization.id]"
-                type="text"
-                placeholder="Nueva area"
-                @keyup.enter="createAreaForOrganization(organization.id)"
-              />
-              <button class="info-button" @click="createAreaForOrganization(organization.id)">
-                Agregar area
-              </button>
             </div>
           </article>
         </div>
@@ -2153,6 +2134,81 @@ async function printReport(reportId: string) {
             </div>
           </article>
         </div>
+      </div>
+    </section>
+
+    <section v-else-if="view === 'hospital-edit'" class="hospital-edit-page">
+      <button @click="closeHospitalEdit">Volver a hospitales</button>
+
+      <div v-if="selectedHospitalForEdit" class="section-block hospital-edit-panel">
+        <div class="hospital-edit-title">
+          <div>
+            <span class="eyebrow">Editar hospital</span>
+            <h1>{{ selectedHospitalForEdit.name }}</h1>
+          </div>
+          <button class="danger-button" @click="removeOrganization(selectedHospitalForEdit)">
+            Eliminar hospital
+          </button>
+        </div>
+
+        <div class="hospital-edit-form">
+          <label>
+            Nombre del hospital
+            <input v-model="editingOrganizationName" type="text" @keyup.enter="saveOrganizationEdit(selectedHospitalForEdit.id)" />
+          </label>
+          <button class="success-button" @click="saveOrganizationEdit(selectedHospitalForEdit.id)">
+            Guardar hospital
+          </button>
+        </div>
+
+        <div class="hospital-edit-areas">
+          <div class="stock-list-header">
+            <h2>Areas del hospital</h2>
+          </div>
+
+          <div class="hospital-card-actions">
+            <input
+              v-model="hospitalAreaDrafts[selectedHospitalForEdit.id]"
+              type="text"
+              placeholder="Nueva area"
+              @keyup.enter="createAreaForOrganization(selectedHospitalForEdit.id)"
+            />
+            <button class="info-button" @click="createAreaForOrganization(selectedHospitalForEdit.id)">
+              Agregar area
+            </button>
+          </div>
+
+          <div class="area-edit-list">
+            <article
+              v-for="area in areasForOrganization(selectedHospitalForEdit.id)"
+              :key="area.id"
+              class="area-edit-card"
+            >
+              <template v-if="editingAreaId !== area.id">
+                <strong>{{ area.name }}</strong>
+                <div>
+                  <button class="info-button" @click="startAreaEdit(area)">Editar</button>
+                  <button class="danger-button" @click="removeArea(area)">Eliminar</button>
+                </div>
+              </template>
+              <template v-else>
+                <input v-model="editingAreaName" type="text" @keyup.enter="saveAreaEdit(area)" />
+                <div>
+                  <button class="success-button" @click="saveAreaEdit(area)">Guardar</button>
+                  <button @click="cancelAreaEdit">Cancelar</button>
+                </div>
+              </template>
+            </article>
+            <p v-if="areasForOrganization(selectedHospitalForEdit.id).length === 0" class="empty-search-result">
+              No hay areas registradas en este hospital.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="section-block">
+        <p>Selecciona un hospital para editarlo.</p>
+        <button class="info-button" @click="setView('users')">Ver hospitales</button>
       </div>
     </section>
 
