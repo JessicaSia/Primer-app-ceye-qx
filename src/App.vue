@@ -94,6 +94,7 @@ const organizationsList = ref<Organization[]>([]);
 const selectedOrganizationId = ref(getActiveContext().organizationId);
 const selectedAreaId = ref(getActiveContext().areaId);
 const usersLoading = ref(false);
+const showOrganizationModal = ref(false);
 const newOrganizationName = ref('');
 const newUserName = ref('');
 const newUsername = ref('');
@@ -101,7 +102,7 @@ const newUserPassword = ref('');
 const newUserRole = ref<UserRole>('nurse');
 const newUserOrganizationId = ref('');
 const newUserAreaId = ref('');
-const newAreaName = ref('');
+const hospitalAreaDrafts = ref<Record<string, string>>({});
 const editingUserId = ref<string | null>(null);
 const editingUserName = ref('');
 const editingUsername = ref('');
@@ -553,6 +554,23 @@ function areaLabel(areaId?: string) {
   return areasList.value.find((area) => area.id === areaId)?.name || 'Sin area';
 }
 
+function areasForOrganization(organizationId: string) {
+  return areasList.value.filter((area) => area.organization_id === organizationId);
+}
+
+function openOrganizationModal() {
+  newOrganizationName.value = '';
+  showOrganizationModal.value = true;
+  nextTick(() => {
+    document.querySelector<HTMLInputElement>('[data-new-hospital-input]')?.focus();
+  });
+}
+
+function closeOrganizationModal() {
+  showOrganizationModal.value = false;
+  newOrganizationName.value = '';
+}
+
 function ensureOwnerContext() {
   if (!isOwner.value) return;
 
@@ -579,6 +597,12 @@ async function changeOwnerContext() {
   }
 }
 
+async function selectOrganization(organizationId: string, areaId = '') {
+  selectedOrganizationId.value = organizationId;
+  selectedAreaId.value = areaId;
+  await changeOwnerContext();
+}
+
 async function createAppOrganization() {
   const name = newOrganizationName.value.trim();
   if (!name) {
@@ -590,7 +614,7 @@ async function createAppOrganization() {
     const organization = await createOrganization(name);
     organizationsList.value = [...organizationsList.value, organization];
     newUserOrganizationId.value = organization.id;
-    newOrganizationName.value = '';
+    closeOrganizationModal();
     showNotification(`Hospital "${organization.name}" creado correctamente. Tu vista actual no cambio.`);
   } catch (error) {
     console.error(error);
@@ -598,25 +622,22 @@ async function createAppOrganization() {
   }
 }
 
-async function createAppArea() {
-  const name = newAreaName.value.trim();
+async function createAreaForOrganization(organizationId: string) {
+  const name = (hospitalAreaDrafts.value[organizationId] || '').trim();
   if (!name) {
     showNotification('Escribe el nombre del area.', 'error');
     return;
   }
-  if (isOwner.value && !selectedOrganizationId.value) {
-    showNotification('Selecciona un hospital antes de crear un area.', 'error');
-    return;
-  }
 
   try {
-    const organizationId = isOwner.value ? selectedOrganizationId.value : undefined;
     const area = await createArea(name, organizationId);
     areasList.value = [...areasList.value, area];
-    selectedAreaId.value = area.id;
-    setActiveContext(selectedOrganizationId.value, selectedAreaId.value);
-    newUserAreaId.value = area.id;
-    newAreaName.value = '';
+    hospitalAreaDrafts.value = { ...hospitalAreaDrafts.value, [organizationId]: '' };
+    if (selectedOrganizationId.value === organizationId) {
+      selectedAreaId.value = area.id;
+      setActiveContext(selectedOrganizationId.value, selectedAreaId.value);
+      await loadData();
+    }
     showNotification(`Area "${area.name}" creada correctamente.`);
   } catch (error) {
     console.error(error);
@@ -1820,25 +1841,83 @@ async function printReport(reportId: string) {
       <h1>Usuarios y roles</h1>
       <button @click="setView('home')">Volver</button>
 
-      <div class="section-block user-form">
-        <h2>Hospitales y areas</h2>
-        <template v-if="isOwner">
-          <input v-model="newOrganizationName" type="text" placeholder="Nuevo hospital" @keyup.enter="createAppOrganization" />
-          <button class="success-button" @click="createAppOrganization">Crear Hospital</button>
-          <select v-model="selectedOrganizationId" @change="changeOwnerContext">
-            <option v-for="organization in organizationsList" :key="organization.id" :value="organization.id">
-              {{ organization.name }}
-            </option>
-          </select>
-          <select v-model="selectedAreaId" @change="changeOwnerContext">
-            <option value="">Todas las areas</option>
-            <option v-for="area in filteredAreasList" :key="area.id" :value="area.id">
-              {{ area.name }}
-            </option>
-          </select>
-        </template>
-        <input v-model="newAreaName" type="text" placeholder="Nueva area" @keyup.enter="createAppArea" />
-        <button class="info-button" @click="createAppArea">Crear Area</button>
+      <div class="section-block hospital-directory">
+        <div class="hospital-directory-header">
+          <div>
+            <h2>Hospitales y areas</h2>
+            <p>Selecciona un hospital para ver sus datos o agrega areas a cada hospital.</p>
+          </div>
+          <button v-if="isOwner" class="success-button" @click="openOrganizationModal">
+            Agregar nuevo hospital
+          </button>
+        </div>
+
+        <div class="hospital-grid">
+          <article
+            v-for="organization in organizationsList"
+            :key="organization.id"
+            :class="['hospital-card', { active: selectedOrganizationId === organization.id }]"
+          >
+            <div class="hospital-card-header">
+              <div>
+                <span>Hospital</span>
+                <strong>{{ organization.name }}</strong>
+              </div>
+              <button class="info-button" @click="selectOrganization(organization.id)">
+                Seleccionar
+              </button>
+            </div>
+
+            <div class="area-list">
+              <button
+                :class="['area-chip', { active: selectedOrganizationId === organization.id && selectedAreaId === '' }]"
+                @click="selectOrganization(organization.id, '')"
+              >
+                Todas las areas
+              </button>
+              <button
+                v-for="area in areasForOrganization(organization.id)"
+                :key="area.id"
+                :class="['area-chip', { active: selectedAreaId === area.id }]"
+                @click="selectOrganization(organization.id, area.id)"
+              >
+                {{ area.name }}
+              </button>
+              <span v-if="areasForOrganization(organization.id).length === 0" class="empty-search-result">
+                Sin areas registradas.
+              </span>
+            </div>
+
+            <div class="hospital-card-actions">
+              <input
+                v-model="hospitalAreaDrafts[organization.id]"
+                type="text"
+                placeholder="Nueva area"
+                @keyup.enter="createAreaForOrganization(organization.id)"
+              />
+              <button class="info-button" @click="createAreaForOrganization(organization.id)">
+                Agregar area
+              </button>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div v-if="showOrganizationModal" class="modal-backdrop" @click.self="closeOrganizationModal">
+        <div class="modal-card">
+          <h2>Agregar nuevo hospital</h2>
+          <input
+            v-model="newOrganizationName"
+            data-new-hospital-input
+            type="text"
+            placeholder="Nombre del hospital"
+            @keyup.enter="createAppOrganization"
+          />
+          <div class="modal-actions">
+            <button class="success-button" @click="createAppOrganization">Guardar hospital</button>
+            <button @click="closeOrganizationModal">Cancelar</button>
+          </div>
+        </div>
       </div>
 
       <div class="section-block user-form">

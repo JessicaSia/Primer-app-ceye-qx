@@ -720,7 +720,7 @@ def create_organization(request: Request, payload: OrganizationPayload) -> dict:
 def get_areas(request: Request) -> list[dict]:
     with scoped_connection(request) as (connection, user):
         query = select(areas).order_by(areas.c.name)
-        if user.get("organization_id"):
+        if not is_owner(user) and user.get("organization_id"):
             query = query.where(areas.c.organization_id == user["organization_id"])
         rows = connection.execute(query).fetchall()
     return [normalize_area(row) for row in rows]
