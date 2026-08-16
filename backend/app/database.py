@@ -370,7 +370,10 @@ def apply_rls_policies(connection) -> None:
         connection.execute(text(f"ALTER TABLE {table_name} ENABLE ROW LEVEL SECURITY"))
         connection.execute(text(f"DROP POLICY IF EXISTS app_tenant_policy ON {table_name}"))
         if table_name == "areas":
-            condition = "organization_id = current_setting('app.organization_id', true)"
+            condition = (
+                "current_setting('app.role', true) = 'owner' "
+                "OR organization_id = current_setting('app.organization_id', true)"
+            )
         else:
             condition = (
                 "organization_id = current_setting('app.organization_id', true) "

@@ -11,9 +11,11 @@ import {
   createMaterialList,
   createReport,
   createUser,
+  deleteArea,
   deleteCustomMaterial,
   deleteMaterialGas,
   deleteMaterialVapor,
+  deleteOrganization,
   deleteUser,
   getAuthToken,
   getActiveContext,
@@ -34,7 +36,9 @@ import {
   type AuthUser,
   type Organization,
   type UserRole,
+  updateArea,
   updateMaterialOrder,
+  updateOrganization,
   updateReport,
   updateUser,
   updateCustomMaterial,
@@ -103,6 +107,10 @@ const newUserRole = ref<UserRole>('nurse');
 const newUserOrganizationId = ref('');
 const newUserAreaId = ref('');
 const hospitalAreaDrafts = ref<Record<string, string>>({});
+const editingOrganizationId = ref<string | null>(null);
+const editingOrganizationName = ref('');
+const editingAreaId = ref<string | null>(null);
+const editingAreaName = ref('');
 const editingUserId = ref<string | null>(null);
 const editingUserName = ref('');
 const editingUsername = ref('');
@@ -471,6 +479,10 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+function confirmDelete(message: string) {
+  return window.confirm(message);
+}
+
 function setView(nextView: View) {
   if (nextView === 'stock' && !canManageStock.value) {
     showNotification('Tu rol no permite modificar stock.', 'error');
@@ -645,6 +657,105 @@ async function createAreaForOrganization(organizationId: string) {
   }
 }
 
+function startOrganizationEdit(organization: Organization) {
+  editingOrganizationId.value = organization.id;
+  editingOrganizationName.value = organization.name;
+}
+
+function cancelOrganizationEdit() {
+  editingOrganizationId.value = null;
+  editingOrganizationName.value = '';
+}
+
+async function saveOrganizationEdit(organizationId: string) {
+  const name = editingOrganizationName.value.trim();
+  if (!name) {
+    showNotification('Escribe el nombre del hospital.', 'error');
+    return;
+  }
+
+  try {
+    const updated = await updateOrganization(organizationId, name);
+    organizationsList.value = organizationsList.value.map((organization) =>
+      organization.id === organizationId ? updated : organization
+    );
+    cancelOrganizationEdit();
+    showNotification(`Hospital "${updated.name}" actualizado correctamente.`);
+  } catch (error) {
+    console.error(error);
+    showNotification(getErrorMessage(error, 'Error actualizando hospital'), 'error');
+  }
+}
+
+async function removeOrganization(organization: Organization) {
+  if (!confirmDelete(`¿Estas segura de eliminar el hospital "${organization.name}"? Esta accion no se puede deshacer.`)) {
+    return;
+  }
+
+  try {
+    await deleteOrganization(organization.id);
+    organizationsList.value = organizationsList.value.filter((item) => item.id !== organization.id);
+    if (selectedOrganizationId.value === organization.id) {
+      selectedOrganizationId.value = organizationsList.value[0]?.id || '';
+      selectedAreaId.value = '';
+      setActiveContext(selectedOrganizationId.value, selectedAreaId.value);
+      await loadData();
+    }
+    showNotification(`Hospital "${organization.name}" eliminado correctamente.`);
+  } catch (error) {
+    console.error(error);
+    showNotification(getErrorMessage(error, 'Error eliminando hospital'), 'error');
+  }
+}
+
+function startAreaEdit(area: Area) {
+  editingAreaId.value = area.id;
+  editingAreaName.value = area.name;
+}
+
+function cancelAreaEdit() {
+  editingAreaId.value = null;
+  editingAreaName.value = '';
+}
+
+async function saveAreaEdit(area: Area) {
+  const name = editingAreaName.value.trim();
+  if (!name) {
+    showNotification('Escribe el nombre del area.', 'error');
+    return;
+  }
+
+  try {
+    const updated = await updateArea(area.id, name, area.organization_id);
+    areasList.value = areasList.value.map((item) => (item.id === area.id ? updated : item));
+    cancelAreaEdit();
+    showNotification(`Area "${updated.name}" actualizada correctamente.`);
+  } catch (error) {
+    console.error(error);
+    showNotification(getErrorMessage(error, 'Error actualizando area'), 'error');
+  }
+}
+
+async function removeArea(area: Area) {
+  if (!confirmDelete(`¿Estas segura de eliminar el area "${area.name}"? Esta accion no se puede deshacer.`)) {
+    return;
+  }
+
+  try {
+    await deleteArea(area.id);
+    areasList.value = areasList.value.filter((item) => item.id !== area.id);
+    if (selectedAreaId.value === area.id) {
+      selectedAreaId.value = '';
+      setActiveContext(selectedOrganizationId.value, selectedAreaId.value);
+      await loadData();
+    }
+    showNotification(`Area "${area.name}" eliminada correctamente.`);
+  } catch (error) {
+    console.error(error);
+    showNotification(getErrorMessage(error, 'Error eliminando area'), 'error');
+  }
+}
+
 async function createAppUser() {
   if (!newUserName.value.trim() || !newUsername.value.trim() || !newUserPassword.value) {
     showNotification('Completa nombre, usuario y contrasena.', 'error');
@@ -719,6 +830,10 @@ async function saveUserEdit(userId: string) {
 }
 
 async function removeUser(user: AuthUser) {
+  if (!confirmDelete(`¿Estas segura de eliminar el usuario "${user.name}"? Esta accion no se puede deshacer.`)) {
+    return;
+  }
+
   try {
     await deleteUser(user.id);
     usersList.value = usersList.value.filter((item) => item.id !== user.id);
@@ -964,6 +1079,9 @@ async function addMaterial(destination: string) {
 async function deleteMaterial(id: string, type: MaterialType) {
   const collection = type === 'gas' ? materialsGas : materialsVapor;
   const materialName = collection.value.find((material) => material.id === id)?.name || 'Material';
+  if (!confirmDelete(`¿Estas segura de eliminar el material "${materialName}"? Esta accion no se puede deshacer.`)) {
+    return;
+  }
 
   try {
     if (type === 'gas') {
@@ -1128,6 +1246,10 @@ async function saveCustomMaterialEdit(listId: string) {
 }
 
 async function removeCustomMaterial(listId: string, material: Material) {
+  if (!confirmDelete(`¿Estas segura de eliminar el material "${material.name}"? Esta accion no se puede deshacer.`)) {
+    return;
+  }
+
   try {
     await deleteCustomMaterial(listId, material.id);
     customMaterialLists.value = customMaterialLists.value.map((list) =>
@@ -1859,13 +1981,22 @@ async function printReport(reportId: string) {
             :class="['hospital-card', { active: selectedOrganizationId === organization.id }]"
           >
             <div class="hospital-card-header">
-              <div>
+              <div v-if="editingOrganizationId !== organization.id">
                 <span>Hospital</span>
                 <strong>{{ organization.name }}</strong>
               </div>
-              <button class="info-button" @click="selectOrganization(organization.id)">
-                Seleccionar
-              </button>
+              <div v-else class="hospital-edit-row">
+                <input v-model="editingOrganizationName" type="text" @keyup.enter="saveOrganizationEdit(organization.id)" />
+                <button class="success-button" @click="saveOrganizationEdit(organization.id)">Guardar</button>
+                <button @click="cancelOrganizationEdit">Cancelar</button>
+              </div>
+              <div v-if="editingOrganizationId !== organization.id" class="hospital-card-buttons">
+                <button class="info-button" @click="selectOrganization(organization.id)">
+                  Seleccionar
+                </button>
+                <button class="info-button" @click="startOrganizationEdit(organization)">Editar</button>
+                <button class="danger-button" @click="removeOrganization(organization)">Eliminar</button>
+              </div>
             </div>
 
             <div class="area-list">
@@ -1875,14 +2006,24 @@ async function printReport(reportId: string) {
               >
                 Todas las areas
               </button>
-              <button
+              <div
                 v-for="area in areasForOrganization(organization.id)"
                 :key="area.id"
-                :class="['area-chip', { active: selectedAreaId === area.id }]"
-                @click="selectOrganization(organization.id, area.id)"
+                :class="['area-item', { active: selectedAreaId === area.id }]"
               >
-                {{ area.name }}
-              </button>
+                <template v-if="editingAreaId !== area.id">
+                  <button class="area-chip" @click="selectOrganization(organization.id, area.id)">
+                    {{ area.name }}
+                  </button>
+                  <button class="mini-button" @click="startAreaEdit(area)">Editar</button>
+                  <button class="mini-button danger-button" @click="removeArea(area)">Eliminar</button>
+                </template>
+                <template v-else>
+                  <input v-model="editingAreaName" type="text" @keyup.enter="saveAreaEdit(area)" />
+                  <button class="mini-button success-button" @click="saveAreaEdit(area)">Guardar</button>
+                  <button class="mini-button" @click="cancelAreaEdit">Cancelar</button>
+                </template>
+              </div>
               <span v-if="areasForOrganization(organization.id).length === 0" class="empty-search-result">
                 Sin areas registradas.
               </span>

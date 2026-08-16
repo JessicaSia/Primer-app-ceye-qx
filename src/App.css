@@ -1564,6 +1564,28 @@ table tbody tr:hover {
   gap: 12px;
 }
 
+.hospital-card-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.hospital-card-buttons button,
+.mini-button {
+  min-height: 34px;
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.hospital-edit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  width: 100%;
+}
+
 .hospital-card-header span {
   display: block;
   color: var(--muted);
@@ -1584,6 +1606,25 @@ table tbody tr:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.area-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.area-item.active .area-chip {
+  background: var(--brand-green);
+  color: #163300;
+  border-color: rgba(183, 229, 0, 0.82);
+}
+
+.area-item input {
+  min-height: 36px;
+  padding: 8px 10px;
+  font-size: 13px;
 }
 
 .area-chip {
@@ -1733,7 +1774,8 @@ table tbody tr:hover {
   .owner-context-panel,
   .user-edit-form,
   .user-card-content,
-  .hospital-card-actions {
+  .hospital-card-actions,
+  .hospital-edit-row {
     grid-template-columns: 1fr;
   }
 

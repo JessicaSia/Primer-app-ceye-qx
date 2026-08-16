@@ -185,12 +185,25 @@ export const createOrganization = (name: string) =>
     method: 'POST',
     body: JSON.stringify({ name }),
   });
+export const updateOrganization = (id: string, name: string) =>
+  request<Organization>(`/organizations/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ name }),
+  });
+export const deleteOrganization = (id: string) =>
+  request(`/organizations/${id}`, { method: 'DELETE' });
 export const getAreas = () => request<Area[]>('/areas');
 export const createArea = (name: string, organization_id?: string) =>
   request<Area>('/areas', {
     method: 'POST',
     body: JSON.stringify({ name, organization_id }),
   });
+export const updateArea = (id: string, name: string, organization_id?: string) =>
+  request<Area>(`/areas/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ name, organization_id }),
+  });
+export const deleteArea = (id: string) => request(`/areas/${id}`, { method: 'DELETE' });
 
 export const createUser = (payload: {
   name: string;

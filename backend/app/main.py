@@ -20,6 +20,8 @@ from .database import (
     get_engine,
     init_db,
     material_lists,
+    materials_gas,
+    materials_vapor,
     organizations,
     report_differences,
     reports,
@@ -210,6 +212,38 @@ def normalize_area(row) -> dict:
         "created_at": item.get("created_at"),
         "updated_at": item.get("updated_at"),
     }
+
+
+def count_rows(connection, table, *conditions) -> int:
+    query = select(func.count()).select_from(table)
+    for condition in conditions:
+        query = query.where(condition)
+    return connection.execute(query).scalar_one()
+
+
+def organization_has_data(connection, organization_id: str) -> bool:
+    checks = (
+        count_rows(connection, users, users.c.organization_id == organization_id),
+        count_rows(connection, areas, areas.c.organization_id == organization_id),
+        count_rows(connection, materials_gas, materials_gas.c.organization_id == organization_id),
+        count_rows(connection, materials_vapor, materials_vapor.c.organization_id == organization_id),
+        count_rows(connection, material_lists, material_lists.c.organization_id == organization_id),
+        count_rows(connection, custom_materials, custom_materials.c.organization_id == organization_id),
+        count_rows(connection, reports, reports.c.organization_id == organization_id),
+    )
+    return any(checks)
+
+
+def area_has_data(connection, area_id: str) -> bool:
+    checks = (
+        count_rows(connection, users, users.c.area_id == area_id),
+        count_rows(connection, materials_gas, materials_gas.c.area_id == area_id),
+        count_rows(connection, materials_vapor, materials_vapor.c.area_id == area_id),
+        count_rows(connection, material_lists, material_lists.c.area_id == area_id),
+        count_rows(connection, custom_materials, custom_materials.c.area_id == area_id),
+        count_rows(connection, reports, reports.c.area_id == area_id),
+    )
+    return any(checks)
 
 
 def is_owner(user: dict) -> bool:
@@ -716,6 +750,48 @@ def create_organization(request: Request, payload: OrganizationPayload) -> dict:
     return normalize_organization(row)
 
 
+@app.put("/api/organizations/{organization_id}")
+def update_organization(request: Request, organization_id: str, payload: OrganizationPayload) -> dict:
+    require_role(request, "owner")
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="El nombre del hospital es requerido")
+
+    with get_engine().begin() as connection:
+        duplicate = connection.execute(
+            select(organizations.c.id)
+            .where(func.lower(organizations.c.name) == name.lower())
+            .where(organizations.c.id != organization_id)
+        ).first()
+        if duplicate:
+            raise HTTPException(status_code=400, detail="Ya existe un hospital con ese nombre")
+        result = connection.execute(
+            update(organizations)
+            .where(organizations.c.id == organization_id)
+            .values(name=name, updated_at=func.now())
+        )
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Hospital no encontrado")
+        row = connection.execute(select(organizations).where(organizations.c.id == organization_id)).first()
+    return normalize_organization(row)
+
+
+@app.delete("/api/organizations/{organization_id}")
+def delete_organization(request: Request, organization_id: str) -> dict:
+    require_role(request, "owner")
+    with get_engine().begin() as connection:
+        row = connection.execute(select(organizations).where(organizations.c.id == organization_id)).first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Hospital no encontrado")
+        if organization_has_data(connection, organization_id):
+            raise HTTPException(
+                status_code=400,
+                detail="No se puede eliminar un hospital con areas, usuarios, inventario o reportes",
+            )
+        connection.execute(delete(organizations).where(organizations.c.id == organization_id))
+    return {"message": "Deleted", "id": organization_id}
+
+
 @app.get("/api/areas")
 def get_areas(request: Request) -> list[dict]:
     with scoped_connection(request) as (connection, user):
@@ -753,6 +829,64 @@ def create_area(request: Request, payload: AreaPayload) -> dict:
         )
         row = connection.execute(select(areas).where(areas.c.id == area_id)).first()
     return normalize_area(row)
+
+
+@app.put("/api/areas/{area_id}")
+def update_area(request: Request, area_id: str, payload: AreaPayload) -> dict:
+    actor = require_role(request, "admin")
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="El nombre del area es requerido")
+
+    with scoped_connection(request) as (connection, user):
+        area_row = connection.execute(select(areas).where(areas.c.id == area_id)).first()
+        if not area_row:
+            raise HTTPException(status_code=404, detail="Area no encontrada")
+        current_area = row_to_dict(area_row)
+        if not is_owner(actor) and current_area["organization_id"] != user["organization_id"]:
+            raise HTTPException(status_code=403, detail="No tienes permiso para esta area")
+
+        organization_id = current_area["organization_id"]
+        if is_owner(actor) and payload.organization_id:
+            organization_id = payload.organization_id
+            if not connection.execute(select(organizations.c.id).where(organizations.c.id == organization_id)).first():
+                raise HTTPException(status_code=400, detail="Hospital no valido")
+
+        duplicate = connection.execute(
+            select(areas.c.id)
+            .where(areas.c.organization_id == organization_id)
+            .where(func.lower(areas.c.name) == name.lower())
+            .where(areas.c.id != area_id)
+        ).first()
+        if duplicate:
+            raise HTTPException(status_code=400, detail="Ya existe un area con ese nombre")
+
+        connection.execute(
+            update(areas)
+            .where(areas.c.id == area_id)
+            .values(name=name, organization_id=organization_id, updated_at=func.now())
+        )
+        row = connection.execute(select(areas).where(areas.c.id == area_id)).first()
+    return normalize_area(row)
+
+
+@app.delete("/api/areas/{area_id}")
+def delete_area(request: Request, area_id: str) -> dict:
+    actor = require_role(request, "admin")
+    with scoped_connection(request) as (connection, user):
+        area_row = connection.execute(select(areas).where(areas.c.id == area_id)).first()
+        if not area_row:
+            raise HTTPException(status_code=404, detail="Area no encontrada")
+        current_area = row_to_dict(area_row)
+        if not is_owner(actor) and current_area["organization_id"] != user["organization_id"]:
+            raise HTTPException(status_code=403, detail="No tienes permiso para esta area")
+        if area_has_data(connection, area_id):
+            raise HTTPException(
+                status_code=400,
+                detail="No se puede eliminar un area con usuarios, inventario o reportes",
+            )
+        connection.execute(delete(areas).where(areas.c.id == area_id))
+    return {"message": "Deleted", "id": area_id}
 
 
 @app.get("/api/materials/{material_type}")
