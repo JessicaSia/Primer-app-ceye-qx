@@ -549,6 +549,7 @@ function organizationLabel(organizationId?: string) {
 }
 
 function areaLabel(areaId?: string) {
+  if (isOwner.value && !areaId) return 'Todas las sedes';
   return areasList.value.find((area) => area.id === areaId)?.name || 'Sin area';
 }
 
@@ -559,8 +560,8 @@ function ensureOwnerContext() {
     selectedOrganizationId.value = organizationsList.value[0].id;
   }
   const availableAreas = areasList.value.filter((area) => area.organization_id === selectedOrganizationId.value);
-  if (!selectedAreaId.value || !availableAreas.some((area) => area.id === selectedAreaId.value)) {
-    selectedAreaId.value = availableAreas[0]?.id || '';
+  if (selectedAreaId.value && !availableAreas.some((area) => area.id === selectedAreaId.value)) {
+    selectedAreaId.value = '';
   }
   setActiveContext(selectedOrganizationId.value, selectedAreaId.value);
 }
@@ -568,8 +569,8 @@ function ensureOwnerContext() {
 async function changeOwnerContext() {
   if (!isOwner.value) return;
   const availableAreas = areasList.value.filter((area) => area.organization_id === selectedOrganizationId.value);
-  if (!availableAreas.some((area) => area.id === selectedAreaId.value)) {
-    selectedAreaId.value = availableAreas[0]?.id || '';
+  if (selectedAreaId.value && !availableAreas.some((area) => area.id === selectedAreaId.value)) {
+    selectedAreaId.value = '';
   }
   setActiveContext(selectedOrganizationId.value, selectedAreaId.value);
   await loadData();
@@ -588,12 +589,9 @@ async function createAppOrganization() {
   try {
     const organization = await createOrganization(name);
     organizationsList.value = [...organizationsList.value, organization];
-    selectedOrganizationId.value = organization.id;
-    selectedAreaId.value = '';
     newUserOrganizationId.value = organization.id;
     newOrganizationName.value = '';
-    setActiveContext(selectedOrganizationId.value, selectedAreaId.value);
-    showNotification(`Hospital "${organization.name}" creado correctamente.`);
+    showNotification(`Hospital "${organization.name}" creado correctamente. Tu vista actual no cambio.`);
   } catch (error) {
     console.error(error);
     showNotification(getErrorMessage(error, 'Error creando hospital'), 'error');
@@ -1502,6 +1500,7 @@ async function printReport(reportId: string) {
             </option>
           </select>
           <select v-model="selectedAreaId" @change="changeOwnerContext">
+            <option value="">Todas las sedes</option>
             <option v-for="area in filteredAreasList" :key="area.id" :value="area.id">
               {{ area.name }}
             </option>
@@ -1829,6 +1828,12 @@ async function printReport(reportId: string) {
           <select v-model="selectedOrganizationId" @change="changeOwnerContext">
             <option v-for="organization in organizationsList" :key="organization.id" :value="organization.id">
               {{ organization.name }}
+            </option>
+          </select>
+          <select v-model="selectedAreaId" @change="changeOwnerContext">
+            <option value="">Todas las sedes</option>
+            <option v-for="area in filteredAreasList" :key="area.id" :value="area.id">
+              {{ area.name }}
             </option>
           </select>
         </template>
